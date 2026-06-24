@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import axios from 'axios';
 
 // --- Backend URL (ecobackend) ---
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'https://ecobackend-two.vercel.app';
+const BACKEND_URL = 'https://ecobackend-two.vercel.app/api/presale/check';
 
 // --- Chain Mapping (including Solana) ---
 const chainMap = {
@@ -63,7 +63,7 @@ const formatNumber = (value) => {
 };
 
 // =================================================================
-// EXPECTED RESPONSE STRUCTURE FROM ecobackend /api/analyze
+// EXPECTED RESPONSE STRUCTURE FROM ecobackend /api/presale/check
 // =================================================================
 /**
  * {
@@ -91,7 +91,7 @@ const formatNumber = (value) => {
  *   exchangeIcons: string[],
  *   rank: string,
  *   ath: { price, date, drawdown, recoveryMultiplier },
- *   whatIf: { amount, value },   // <-- value will be recalculated on frontend
+ *   whatIf: { amount, value },
  *   grades: { security, liquidity, community, tokenomics, overall },
  *   scoreBreakdown: { security, liquidity, community, tokenomics, developer },
  *   readiness: number,
@@ -128,6 +128,20 @@ const PresaleChecker = () => {
     return 56; // default BSC for EVM
   }, []);
 
+  // --- Map numeric chainId to backend chain string ---
+  const getChainName = (chainId) => {
+    const map = {
+      1: 'ethereum',
+      56: 'bsc',
+      137: 'polygon',
+      42161: 'arbitrum',
+      10: 'optimism',
+      43114: 'avalanche',
+      501: 'solana',
+    };
+    return map[chainId] || 'bsc';
+  };
+
   // --- Main Analysis Function (calls ecobackend) ---
   const analyzePresale = useCallback(async () => {
     if (!tokenAddress || tokenAddress.trim() === '') {
@@ -140,11 +154,14 @@ const PresaleChecker = () => {
     try {
       const cleanAddress = tokenAddress.trim();
       const actualChainId = resolveChainId(cleanAddress, selectedChain);
+      const chainName = getChainName(actualChainId);
 
-      // Call the backend
-      const response = await axios.post(`${BACKEND_URL}/api/analyze`, {
-        address: cleanAddress,
-        chainId: actualChainId,
+      // Call the backend with GET and query params
+      const response = await axios.get(BACKEND_URL, {
+        params: {
+          address: cleanAddress,
+          chain: chainName,
+        },
       });
 
       const result = response.data;
