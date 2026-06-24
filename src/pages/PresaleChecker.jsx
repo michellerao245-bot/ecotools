@@ -1,10 +1,10 @@
 import React, { useState, useCallback } from 'react';
 import axios from 'axios';
 
-// --- Backend URL (ecobackend) ---
+// --- Backend URL ---
 const BACKEND_URL = 'https://ecobackend-two.vercel.app/api/presale/check';
 
-// --- Chain Mapping (including Solana) ---
+// --- Chain Mapping ---
 const chainMap = {
   1: 'Ethereum',
   56: 'BNB Chain',
@@ -15,7 +15,6 @@ const chainMap = {
   501: 'Solana',
 };
 
-// --- Reverse mapping for dropdown ---
 const chainOptions = [
   { id: 'auto', name: 'Auto Detect' },
   { id: 1, name: 'Ethereum' },
@@ -27,20 +26,14 @@ const chainOptions = [
   { id: 501, name: 'Solana' },
 ];
 
-// --- Helper: detect chain from address ---
 const detectChainFromAddress = (address) => {
   if (!address) return 'auto';
   const trimmed = address.trim();
-  if (trimmed.startsWith('0x')) {
-    return 'auto';
-  }
-  if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trimmed)) {
-    return 501;
-  }
+  if (trimmed.startsWith('0x')) return 'auto';
+  if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trimmed)) return 501;
   return 'auto';
 };
 
-// --- Helper: format currency ---
 const formatCurrency = (value) => {
   if (!value || value === 'N/A') return 'N/A';
   const num = parseFloat(value);
@@ -61,19 +54,12 @@ const formatNumber = (value) => {
   return num.toFixed(2);
 };
 
-// --- Safe toFixed (handles 'N/A' and non-numbers) ---
 const safeToFixed = (value, digits = 1) => {
   if (typeof value === 'number' && !isNaN(value)) {
     return value.toFixed(digits);
   }
   return 'N/A';
 };
-
-// =================================================================
-// EXPECTED RESPONSE STRUCTURE FROM ecobackend /api/presale/check
-// =================================================================
-// (same as before, but we now handle 'N/A' for numbers)
-// =================================================================
 
 // --- MAIN COMPONENT ---
 const PresaleChecker = () => {
@@ -86,7 +72,6 @@ const PresaleChecker = () => {
   const [monitoring, setMonitoring] = useState(false);
   const [whatIfAmount, setWhatIfAmount] = useState(1000);
 
-  // --- Resolve actual chainId ---
   const resolveChainId = useCallback((address, selected) => {
     if (selected !== 'auto') return parseInt(selected);
     const detected = detectChainFromAddress(address);
@@ -94,7 +79,6 @@ const PresaleChecker = () => {
     return 56;
   }, []);
 
-  // --- Map numeric chainId to backend chain string ---
   const getChainName = (chainId) => {
     const map = {
       1: 'ethereum',
@@ -108,7 +92,6 @@ const PresaleChecker = () => {
     return map[chainId] || 'bsc';
   };
 
-  // --- Main Analysis Function ---
   const analyzePresale = useCallback(async () => {
     if (!tokenAddress || tokenAddress.trim() === '') {
       setError('Please enter a token address');
@@ -131,7 +114,6 @@ const PresaleChecker = () => {
 
       const result = response.data;
 
-      // Recalculate What-If on frontend
       if (result.market && result.market.price !== 'N/A') {
         const currentPrice = parseFloat(result.market.price);
         const launchPrice = currentPrice > 0 ? currentPrice / 10 : 0;
@@ -141,7 +123,6 @@ const PresaleChecker = () => {
 
       setPresaleData(result);
       setScanHistory(prev => [result, ...prev.slice(0, 9)]);
-
     } catch (err) {
       setError(err.message || 'Failed to analyze presale.');
       console.error(err);
@@ -150,7 +131,7 @@ const PresaleChecker = () => {
     }
   }, [tokenAddress, selectedChain, resolveChainId, whatIfAmount]);
 
-  // -------------------- JSX RENDER (with safeToFixed fixes) --------------------
+  // ----- JSX -----
   return (
     <div className="min-h-screen bg-gray-950 text-white px-4 md:px-6 py-8 pt-20 flex flex-col">
       <div className="max-w-6xl mx-auto w-full">
@@ -210,7 +191,7 @@ const PresaleChecker = () => {
 
         {presaleData && !loading && (
           <div className="space-y-6">
-            {/* Launch Status Card */}
+            {/* Launch Status */}
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
               <div className="flex items-center gap-4">
                 <span className="text-3xl">{presaleData.launch.icon}</span>
