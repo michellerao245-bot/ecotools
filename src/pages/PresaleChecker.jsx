@@ -32,11 +32,10 @@ const detectChainFromAddress = (address) => {
   if (!address) return 'auto';
   const trimmed = address.trim();
   if (trimmed.startsWith('0x')) {
-    return 'auto'; // EVM – user will select or default to BSC
+    return 'auto';
   }
-  // Solana address: base58, 32-44 chars, not starting with 0x
   if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trimmed)) {
-    return 501; // Solana
+    return 501;
   }
   return 'auto';
 };
@@ -62,50 +61,18 @@ const formatNumber = (value) => {
   return num.toFixed(2);
 };
 
+// --- Safe toFixed (handles 'N/A' and non-numbers) ---
+const safeToFixed = (value, digits = 1) => {
+  if (typeof value === 'number' && !isNaN(value)) {
+    return value.toFixed(digits);
+  }
+  return 'N/A';
+};
+
 // =================================================================
 // EXPECTED RESPONSE STRUCTURE FROM ecobackend /api/presale/check
 // =================================================================
-/**
- * {
- *   token: { name, symbol, address, chain, totalSupply, decimals, createdAt, age, ageDays, ageRisk },
- *   launch: { status, icon, details },
- *   presale: { platform, poolAddress, status, softCap, hardCap, raised, contributors, startTime, endTime, claimTime, presaleRate, liquidityPercent, unsoldTokens, saleType, minBuy, maxBuy, raisedPercent },
- *   isEstablished: boolean,
- *   hasMarketData: boolean,
- *   security: { honeypot, ownershipRenounced, mintable, blacklist, canPause, proxy, hiddenOwner, tradingDisabled, score, level },
- *   liquidity: { total, locked, percent, unlockDate, locker },
- *   holders: { count, top10Ratio, creatorPercent, creatorAddress, creatorBalance },
- *   market: { price, priceChange24h, liquidity, volume24h, marketCap, fdv, chain },
- *   social: { website, twitter, telegram, discord, github },
- *   developer: { projects, successful, failed, suspectedRugs },
- *   smartMoney: { wallets, netFlow, buys, sells },
- *   whale: { buys, sells, netFlow },
- *   redFlags: string[],
- *   pros: string[],
- *   cons: string[],
- *   investScore: number|string,
- *   hiddenGemScore: number|string,
- *   moonPotential: number|string,
- *   communityScore: number,
- *   listingStatus: string,
- *   exchangeIcons: string[],
- *   rank: string,
- *   ath: { price, date, drawdown, recoveryMultiplier },
- *   whatIf: { amount, value },
- *   grades: { security, liquidity, community, tokenomics, overall },
- *   scoreBreakdown: { security, liquidity, community, tokenomics, developer },
- *   readiness: number,
- *   supplyDist: { team, community, burn, liquidity },
- *   concentration: { top1, top5, top10 },
- *   scamRisk: string,
- *   successProb: number|string,
- *   summary: string,
- *   aiVerdict: string,
- *   overallRecommendation: string,
- *   tax: { buy, sell, transfer },
- *   narrative: { narrative, strength, trend }
- * }
- */
+// (same as before, but we now handle 'N/A' for numbers)
 // =================================================================
 
 // --- MAIN COMPONENT ---
@@ -119,13 +86,12 @@ const PresaleChecker = () => {
   const [monitoring, setMonitoring] = useState(false);
   const [whatIfAmount, setWhatIfAmount] = useState(1000);
 
-  // --- Resolve actual chainId from address and selection ---
+  // --- Resolve actual chainId ---
   const resolveChainId = useCallback((address, selected) => {
     if (selected !== 'auto') return parseInt(selected);
     const detected = detectChainFromAddress(address);
-    if (detected === 501) return 501; // Solana
-    // For EVM, we default to BSC if not specified
-    return 56; // default BSC for EVM
+    if (detected === 501) return 501;
+    return 56;
   }, []);
 
   // --- Map numeric chainId to backend chain string ---
@@ -142,7 +108,7 @@ const PresaleChecker = () => {
     return map[chainId] || 'bsc';
   };
 
-  // --- Main Analysis Function (calls ecobackend) ---
+  // --- Main Analysis Function ---
   const analyzePresale = useCallback(async () => {
     if (!tokenAddress || tokenAddress.trim() === '') {
       setError('Please enter a token address');
@@ -156,7 +122,6 @@ const PresaleChecker = () => {
       const actualChainId = resolveChainId(cleanAddress, selectedChain);
       const chainName = getChainName(actualChainId);
 
-      // Call the backend with GET and query params
       const response = await axios.get(BACKEND_URL, {
         params: {
           address: cleanAddress,
@@ -166,7 +131,7 @@ const PresaleChecker = () => {
 
       const result = response.data;
 
-      // Recalculate What-If on frontend because it depends on user input
+      // Recalculate What-If on frontend
       if (result.market && result.market.price !== 'N/A') {
         const currentPrice = parseFloat(result.market.price);
         const launchPrice = currentPrice > 0 ? currentPrice / 10 : 0;
@@ -185,7 +150,7 @@ const PresaleChecker = () => {
     }
   }, [tokenAddress, selectedChain, resolveChainId, whatIfAmount]);
 
-  // -------------------- JSX RENDER (fully preserved) --------------------
+  // -------------------- JSX RENDER (with safeToFixed fixes) --------------------
   return (
     <div className="min-h-screen bg-gray-950 text-white px-4 md:px-6 py-8 pt-20 flex flex-col">
       <div className="max-w-6xl mx-auto w-full">
@@ -364,7 +329,7 @@ const PresaleChecker = () => {
               <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
                 <h3 className="text-gray-400 text-sm">Holders</h3>
                 <p className="text-3xl font-bold">{formatNumber(presaleData.holders.count)}</p>
-                <p className="text-xs text-gray-500">Top 10: {presaleData.holders.top10Ratio !== 'N/A' ? presaleData.holders.top10Ratio.toFixed(1) + '%' : 'N/A'}</p>
+                <p className="text-xs text-gray-500">Top 10: {safeToFixed(presaleData.holders.top10Ratio)}%</p>
               </div>
             </div>
 
@@ -553,11 +518,11 @@ const PresaleChecker = () => {
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span>Team Wallet</span>
-                      <span className="font-bold text-red-400">{presaleData.supplyDist.team.toFixed(1)}%</span>
+                      <span className="font-bold text-red-400">{safeToFixed(presaleData.supplyDist.team)}%</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Community</span>
-                      <span className="font-bold text-green-400">{presaleData.supplyDist.community.toFixed(1)}%</span>
+                      <span className="font-bold text-green-400">{safeToFixed(presaleData.supplyDist.community)}%</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Burn Wallet</span>
@@ -577,31 +542,31 @@ const PresaleChecker = () => {
                     <div className="flex justify-between">
                       <span>Top 1 Holder</span>
                       <span className={`font-bold ${
-                        presaleData.concentration.top1 > 50 ? 'text-red-400' :
-                        presaleData.concentration.top1 > 30 ? 'text-yellow-400' :
+                        typeof presaleData.concentration.top1 === 'number' && presaleData.concentration.top1 > 50 ? 'text-red-400' :
+                        typeof presaleData.concentration.top1 === 'number' && presaleData.concentration.top1 > 30 ? 'text-yellow-400' :
                         'text-green-400'
                       }`}>
-                        {presaleData.concentration.top1.toFixed(1)}%
+                        {safeToFixed(presaleData.concentration.top1)}%
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span>Top 5 Holders</span>
                       <span className={`font-bold ${
-                        presaleData.concentration.top5 > 70 ? 'text-red-400' :
-                        presaleData.concentration.top5 > 50 ? 'text-yellow-400' :
+                        typeof presaleData.concentration.top5 === 'number' && presaleData.concentration.top5 > 70 ? 'text-red-400' :
+                        typeof presaleData.concentration.top5 === 'number' && presaleData.concentration.top5 > 50 ? 'text-yellow-400' :
                         'text-green-400'
                       }`}>
-                        {presaleData.concentration.top5.toFixed(1)}%
+                        {safeToFixed(presaleData.concentration.top5)}%
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span>Top 10 Holders</span>
                       <span className={`font-bold ${
-                        presaleData.concentration.top10 > 80 ? 'text-red-400' :
-                        presaleData.concentration.top10 > 60 ? 'text-yellow-400' :
+                        typeof presaleData.concentration.top10 === 'number' && presaleData.concentration.top10 > 80 ? 'text-red-400' :
+                        typeof presaleData.concentration.top10 === 'number' && presaleData.concentration.top10 > 60 ? 'text-yellow-400' :
                         'text-green-400'
                       }`}>
-                        {presaleData.concentration.top10.toFixed(1)}%
+                        {safeToFixed(presaleData.concentration.top10)}%
                       </span>
                     </div>
                   </div>
@@ -718,25 +683,25 @@ const PresaleChecker = () => {
                     </li>
                     <li className="flex justify-between border-b border-gray-800 pb-2">
                       <span>Top 10 Holders %</span>
-                      <span>{presaleData.holders.top10Ratio !== 'N/A' ? presaleData.holders.top10Ratio.toFixed(1) + '%' : 'N/A'}</span>
+                      <span>{safeToFixed(presaleData.holders.top10Ratio)}%</span>
                     </li>
                     <li className="flex justify-between border-b border-gray-800 pb-2">
                       <span>Top Wallet %</span>
-                      <span className={presaleData.holders.creatorPercent > 50 ? 'text-red-400' : 'text-green-400'}>
-                        {presaleData.holders.creatorPercent.toFixed(1)}%
+                      <span className={typeof presaleData.holders.creatorPercent === 'number' && presaleData.holders.creatorPercent > 50 ? 'text-red-400' : 'text-green-400'}>
+                        {safeToFixed(presaleData.holders.creatorPercent)}%
                       </span>
                     </li>
                     <li className="flex justify-between">
                       <span>Whale Risk</span>
                       <span className={
-                        presaleData.holders.creatorPercent > 90 ? 'text-red-600 font-bold' :
-                        presaleData.holders.creatorPercent > 50 ? 'text-red-400' :
-                        presaleData.holders.creatorPercent > 30 ? 'text-yellow-400' :
+                        typeof presaleData.holders.creatorPercent === 'number' && presaleData.holders.creatorPercent > 90 ? 'text-red-600 font-bold' :
+                        typeof presaleData.holders.creatorPercent === 'number' && presaleData.holders.creatorPercent > 50 ? 'text-red-400' :
+                        typeof presaleData.holders.creatorPercent === 'number' && presaleData.holders.creatorPercent > 30 ? 'text-yellow-400' :
                         'text-green-400'
                       }>
-                        {presaleData.holders.creatorPercent > 90 ? '🔴 EXTREME' :
-                         presaleData.holders.creatorPercent > 50 ? 'High' :
-                         presaleData.holders.creatorPercent > 30 ? 'Medium' :
+                        {typeof presaleData.holders.creatorPercent === 'number' && presaleData.holders.creatorPercent > 90 ? '🔴 EXTREME' :
+                         typeof presaleData.holders.creatorPercent === 'number' && presaleData.holders.creatorPercent > 50 ? 'High' :
+                         typeof presaleData.holders.creatorPercent === 'number' && presaleData.holders.creatorPercent > 30 ? 'Medium' :
                          'Low'}
                       </span>
                     </li>
@@ -897,8 +862,8 @@ const PresaleChecker = () => {
                     </li>
                     <li className="flex justify-between border-b border-gray-800 pb-2">
                       <span>Ownership %</span>
-                      <span className={presaleData.holders.creatorPercent > 50 ? 'text-red-400 font-bold' : 'text-green-400'}>
-                        {presaleData.holders.creatorPercent.toFixed(2)}%
+                      <span className={typeof presaleData.holders.creatorPercent === 'number' && presaleData.holders.creatorPercent > 50 ? 'text-red-400 font-bold' : 'text-green-400'}>
+                        {safeToFixed(presaleData.holders.creatorPercent, 2)}%
                       </span>
                     </li>
                     <li className="flex justify-between">
