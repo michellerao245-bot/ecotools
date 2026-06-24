@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // API base URL hamari .env file se aayegi
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://api.ecoscanner.ai';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://ecobackend-two.vercel.app';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
