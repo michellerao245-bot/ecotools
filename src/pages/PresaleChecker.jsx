@@ -92,8 +92,10 @@ const PresaleChecker = () => {
     return map[chainId] || 'bsc';
   };
 
-  const analyzePresale = useCallback(async () => {
-    if (!tokenAddress || tokenAddress.trim() === '') {
+  // --- Analyze function now accepts optional address override ---
+  const analyzePresale = useCallback(async (addressOverride) => {
+    const addressToScan = addressOverride || tokenAddress;
+    if (!addressToScan || addressToScan.trim() === '') {
       setError('Please enter a token address');
       return;
     }
@@ -101,7 +103,7 @@ const PresaleChecker = () => {
     setError(null);
 
     try {
-      const cleanAddress = tokenAddress.trim();
+      const cleanAddress = addressToScan.trim();
       const actualChainId = resolveChainId(cleanAddress, selectedChain);
       const chainName = getChainName(actualChainId);
 
@@ -131,11 +133,46 @@ const PresaleChecker = () => {
     }
   }, [tokenAddress, selectedChain, resolveChainId, whatIfAmount]);
 
+  // --- Refresh: re-analyze current token ---
+  const handleRefresh = () => {
+    if (presaleData?.token?.address) {
+      analyzePresale(presaleData.token.address);
+    }
+  };
+
+  // --- Go Back: clear results and focus input ---
+  const goBack = () => {
+    setPresaleData(null);
+    setError(null);
+    // focus on input
+    document.getElementById('tokenInput')?.focus();
+  };
+
   // ----- JSX -----
   return (
     <div className="min-h-screen bg-gray-950 text-white px-4 md:px-6 py-8 pt-20 flex flex-col">
       <div className="max-w-6xl mx-auto w-full">
-        <div className="text-center mb-10">
+        {/* Header with back and refresh buttons */}
+        <div className="text-center mb-10 relative">
+          {presaleData && (
+            <button
+              onClick={goBack}
+              className="absolute left-0 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition p-2 text-2xl"
+              title="Go back"
+            >
+              ←
+            </button>
+          )}
+          {presaleData && (
+            <button
+              onClick={handleRefresh}
+              disabled={loading}
+              className="absolute right-0 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition p-2 text-2xl disabled:opacity-50"
+              title="Refresh data"
+            >
+              ⟳
+            </button>
+          )}
           <h1 className="text-4xl md:text-5xl font-extrabold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
             🚀 Solt Presale Checker
           </h1>
@@ -149,6 +186,7 @@ const PresaleChecker = () => {
           <div className="flex flex-col md:flex-row gap-4 items-center">
             <div className="flex-1 w-full">
               <input
+                id="tokenInput"
                 type="text"
                 placeholder="Enter token address (0x... or Solana address)"
                 value={tokenAddress}
@@ -167,7 +205,7 @@ const PresaleChecker = () => {
                 ))}
               </select>
               <button
-                onClick={analyzePresale}
+                onClick={() => analyzePresale()}
                 disabled={loading}
                 className="bg-purple-600 hover:bg-purple-700 px-6 py-3 rounded-xl font-semibold transition disabled:opacity-50"
               >
