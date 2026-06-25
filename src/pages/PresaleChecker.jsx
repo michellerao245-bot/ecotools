@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import axios from 'axios';
 
 // --- Backend URL ---
@@ -92,7 +92,6 @@ const PresaleChecker = () => {
     return map[chainId] || 'bsc';
   };
 
-  // --- Analyze function now accepts optional address override ---
   const analyzePresale = useCallback(async (addressOverride) => {
     const addressToScan = addressOverride || tokenAddress;
     if (!addressToScan || addressToScan.trim() === '') {
@@ -133,20 +132,85 @@ const PresaleChecker = () => {
     }
   }, [tokenAddress, selectedChain, resolveChainId, whatIfAmount]);
 
-  // --- Refresh: re-analyze current token ---
-  const handleRefresh = () => {
-    if (presaleData?.token?.address) {
-      analyzePresale(presaleData.token.address);
-    }
-  };
-
-  // --- Go Back: clear results and focus input ---
+  // --- Go Back: clear everything and focus input ---
   const goBack = () => {
     setPresaleData(null);
     setError(null);
-    // focus on input
+    setTokenAddress('');
     document.getElementById('tokenInput')?.focus();
   };
+
+  // --- Refresh: clear token address and results (so user can enter new address) ---
+  const handleRefresh = () => {
+    setPresaleData(null);
+    setError(null);
+    setTokenAddress('');
+    document.getElementById('tokenInput')?.focus();
+  };
+
+  // --- Live Monitoring toggle ---
+  const toggleMonitoring = () => {
+    setMonitoring(!monitoring);
+  };
+
+  // --- POLLING-BASED LIVE MONITORING (frontend only) ---
+  useEffect(() => {
+    if (!monitoring || !presaleData?.token?.address) return;
+
+    console.log(`🟢 Monitoring started for ${presaleData.token.symbol}`);
+    let previousData = { ...presaleData };
+
+    const interval = setInterval(async () => {
+      try {
+        const cleanAddress = presaleData.token.address.trim();
+        const actualChainId = resolveChainId(cleanAddress, selectedChain);
+        const chainName = getChainName(actualChainId);
+
+        const response = await axios.get(BACKEND_URL, {
+          params: {
+            address: cleanAddress,
+            chain: chainName,
+          },
+        });
+
+        const newData = response.data;
+
+        // Detect changes
+        const changes = [];
+        if (newData.liquidity?.total !== previousData.liquidity?.total) {
+          changes.push(`💧 Liquidity: ${formatCurrency(newData.liquidity?.total)}`);
+        }
+        if (newData.market?.price !== previousData.market?.price) {
+          changes.push(`💰 Price: $${newData.market?.price}`);
+        }
+        if (newData.holders?.count !== previousData.holders?.count) {
+          changes.push(`👥 Holders: ${newData.holders?.count}`);
+        }
+        if (newData.security?.ownershipRenounced !== previousData.security?.ownershipRenounced) {
+          changes.push(`🏛️ Ownership status changed!`);
+        }
+        if (newData.liquidity?.locked !== previousData.liquidity?.locked) {
+          changes.push(`🔒 Liquidity lock status changed!`);
+        }
+
+        if (changes.length > 0) {
+          console.log('🔔 Changes detected:', changes);
+          alert(`🔔 Changes detected for ${presaleData.token.symbol}:\n${changes.join('\n')}`);
+          setPresaleData(newData);
+          previousData = { ...newData };
+        } else {
+          console.log('⏳ No changes detected');
+        }
+      } catch (err) {
+        console.error('Monitoring error:', err);
+      }
+    }, 30000); // 30 seconds
+
+    return () => {
+      console.log(`🔴 Monitoring stopped for ${presaleData.token.symbol}`);
+      clearInterval(interval);
+    };
+  }, [monitoring, presaleData, selectedChain, resolveChainId]);
 
   // ----- JSX -----
   return (
@@ -157,7 +221,7 @@ const PresaleChecker = () => {
           {presaleData && (
             <button
               onClick={goBack}
-              className="absolute left-0 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition p-2 text-2xl"
+              className="absolute left-0 top-1/2 -translate-y-1/2 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-full text-lg shadow-lg transition z-10"
               title="Go back"
             >
               ←
@@ -167,8 +231,8 @@ const PresaleChecker = () => {
             <button
               onClick={handleRefresh}
               disabled={loading}
-              className="absolute right-0 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition p-2 text-2xl disabled:opacity-50"
-              title="Refresh data"
+              className="absolute right-0 top-1/2 -translate-y-1/2 bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded-full text-lg shadow-lg transition disabled:opacity-50 z-10"
+              title="Clear address & results"
             >
               ⟳
             </button>
@@ -1017,7 +1081,7 @@ const PresaleChecker = () => {
                   <div className="flex items-center justify-between">
                     <h2 className="text-xl font-bold">🔴 Live Monitoring</h2>
                     <button
-                      onClick={() => setMonitoring(!monitoring)}
+                      onClick={toggleMonitoring}
                       className={`px-4 py-2 rounded-xl text-sm font-bold transition ${
                         monitoring ? 'bg-red-600/20 text-red-400 border border-red-600' : 'bg-green-600/20 text-green-400 border border-green-600'
                       }`}
@@ -1029,6 +1093,7 @@ const PresaleChecker = () => {
                     <div className="mt-4 text-sm text-gray-300">
                       <p>✅ Monitoring active for {presaleData.token.symbol}</p>
                       <p className="text-xs text-gray-500 mt-1">Alerts: Ownership Change, Liquidity Removed, Whale Sell</p>
+                      <p className="text-xs text-green-400 mt-1">🔄 Auto-refresh every 30 seconds</p>
                     </div>
                   )}
                 </div>
