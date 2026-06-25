@@ -36,6 +36,7 @@ import {
   Activity,
   LineChart,
   Gauge,
+  PieChart,
 } from "lucide-react";
 
 // --- Backend URL ---
