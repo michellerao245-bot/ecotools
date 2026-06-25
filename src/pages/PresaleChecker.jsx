@@ -72,6 +72,7 @@ const PresaleChecker = () => {
   const [monitoring, setMonitoring] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [countdown, setCountdown] = useState(0);
+  const [lastUpdated, setLastUpdated] = useState(null);
   const [whatIfAmount, setWhatIfAmount] = useState(1000);
 
   const resolveChainId = useCallback((address, selected) => {
@@ -126,6 +127,7 @@ const PresaleChecker = () => {
 
       setPresaleData(result);
       setScanHistory(prev => [result, ...prev.slice(0, 9)]);
+      setLastUpdated(new Date().toLocaleTimeString());
     } catch (err) {
       setError(err.message || 'Failed to analyze presale.');
       console.error(err);
@@ -134,20 +136,23 @@ const PresaleChecker = () => {
     }
   }, [tokenAddress, selectedChain, resolveChainId, whatIfAmount]);
 
-  // --- Go Back: clear everything and focus input ---
+  // --- Go Back: clear everything and go to main page ---
   const goBack = () => {
     setPresaleData(null);
     setError(null);
     setTokenAddress('');
+    setLastUpdated(null);
     document.getElementById('tokenInput')?.focus();
   };
 
-  // --- Refresh: clear token address and results (so user can enter new address) ---
+  // --- Refresh: re-analyze current token (without clearing address) ---
   const handleRefresh = () => {
-    setPresaleData(null);
-    setError(null);
-    setTokenAddress('');
-    document.getElementById('tokenInput')?.focus();
+    if (presaleData?.token?.address) {
+      analyzePresale(presaleData.token.address);
+    } else {
+      // If no data, just do a normal search with current address
+      analyzePresale();
+    }
   };
 
   // --- Live Monitoring toggle ---
@@ -166,7 +171,6 @@ const PresaleChecker = () => {
     }
 
     console.log(`🟢 Monitoring started for ${presaleData.token.symbol}`);
-    let previousData = { ...presaleData };
     let countdownInterval = null;
     let isMounted = true;
 
@@ -178,6 +182,7 @@ const PresaleChecker = () => {
       }
     }, 1000);
 
+    // Polling interval
     const interval = setInterval(async () => {
       if (!isMounted) return;
 
@@ -196,47 +201,21 @@ const PresaleChecker = () => {
 
         const newData = response.data;
 
-        // Detect changes
-        const changes = [];
-        if (newData.liquidity?.total !== previousData.liquidity?.total) {
-          changes.push(`💧 Liquidity: ${formatCurrency(newData.liquidity?.total)}`);
-        }
-        if (newData.market?.price !== previousData.market?.price) {
-          changes.push(`💰 Price: $${newData.market?.price}`);
-        }
-        if (newData.holders?.count !== previousData.holders?.count) {
-          changes.push(`👥 Holders: ${newData.holders?.count}`);
-        }
-        if (newData.security?.ownershipRenounced !== previousData.security?.ownershipRenounced) {
-          changes.push(`🏛️ Ownership status changed!`);
-        }
-        if (newData.liquidity?.locked !== previousData.liquidity?.locked) {
-          changes.push(`🔒 Liquidity lock status changed!`);
-        }
-
-        if (changes.length > 0) {
-          console.log('🔔 Changes detected:', changes);
-          alert(`🔔 Changes detected for ${presaleData.token.symbol}:\n${changes.join('\n')}`);
-          if (isMounted) {
-            setPresaleData(newData);
-            previousData = { ...newData };
-          }
-        } else {
-          console.log('⏳ No changes detected');
-        }
-
-        // Reset countdown after refresh
+        // Always update the data to show refresh (even if no changes)
         if (isMounted) {
-          setCountdown(30);
+          setPresaleData(newData);
+          setLastUpdated(new Date().toLocaleTimeString());
+          console.log('🔄 Data refreshed');
         }
       } catch (err) {
         console.error('Monitoring error:', err);
       } finally {
         if (isMounted) {
           setIsRefreshing(false);
+          setCountdown(30);
         }
       }
-    }, 30000); // 30 seconds
+    }, 30000);
 
     return () => {
       isMounted = false;
@@ -256,7 +235,7 @@ const PresaleChecker = () => {
             <button
               onClick={goBack}
               className="absolute left-0 top-1/2 -translate-y-1/2 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-full text-lg shadow-lg transition z-10"
-              title="Go back"
+              title="Go back to search"
             >
               ←
             </button>
@@ -266,7 +245,7 @@ const PresaleChecker = () => {
               onClick={handleRefresh}
               disabled={loading}
               className="absolute right-0 top-1/2 -translate-y-1/2 bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded-full text-lg shadow-lg transition disabled:opacity-50 z-10"
-              title="Clear address & results"
+              title="Refresh current token data"
             >
               ⟳
             </button>
@@ -406,6 +385,9 @@ const PresaleChecker = () => {
                   <p className="text-xs text-gray-500">Decimals: {presaleData.token.decimals}</p>
                   {presaleData.token.age !== 'N/A' && (
                     <p className="text-xs text-gray-400">Age: {presaleData.token.age} {presaleData.token.ageRisk}</p>
+                  )}
+                  {lastUpdated && (
+                    <p className="text-xs text-gray-500 mt-1">Last updated: {lastUpdated}</p>
                   )}
                 </div>
               </div>
