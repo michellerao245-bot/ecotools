@@ -70,6 +70,8 @@ const PresaleChecker = () => {
   const [presaleData, setPresaleData] = useState(null);
   const [scanHistory, setScanHistory] = useState([]);
   const [monitoring, setMonitoring] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [countdown, setCountdown] = useState(0);
   const [whatIfAmount, setWhatIfAmount] = useState(1000);
 
   const resolveChainId = useCallback((address, selected) => {
@@ -151,16 +153,35 @@ const PresaleChecker = () => {
   // --- Live Monitoring toggle ---
   const toggleMonitoring = () => {
     setMonitoring(!monitoring);
+    if (!monitoring) {
+      setCountdown(30);
+    }
   };
 
-  // --- POLLING-BASED LIVE MONITORING (frontend only) ---
+  // --- POLLING-BASED LIVE MONITORING with visual refresh indicator ---
   useEffect(() => {
-    if (!monitoring || !presaleData?.token?.address) return;
+    if (!monitoring || !presaleData?.token?.address) {
+      setCountdown(0);
+      return;
+    }
 
     console.log(`🟢 Monitoring started for ${presaleData.token.symbol}`);
     let previousData = { ...presaleData };
+    let countdownInterval = null;
+    let isMounted = true;
+
+    // Countdown timer
+    setCountdown(30);
+    countdownInterval = setInterval(() => {
+      if (isMounted) {
+        setCountdown(prev => (prev > 0 ? prev - 1 : 0));
+      }
+    }, 1000);
 
     const interval = setInterval(async () => {
+      if (!isMounted) return;
+
+      setIsRefreshing(true);
       try {
         const cleanAddress = presaleData.token.address.trim();
         const actualChainId = resolveChainId(cleanAddress, selectedChain);
@@ -196,19 +217,32 @@ const PresaleChecker = () => {
         if (changes.length > 0) {
           console.log('🔔 Changes detected:', changes);
           alert(`🔔 Changes detected for ${presaleData.token.symbol}:\n${changes.join('\n')}`);
-          setPresaleData(newData);
-          previousData = { ...newData };
+          if (isMounted) {
+            setPresaleData(newData);
+            previousData = { ...newData };
+          }
         } else {
           console.log('⏳ No changes detected');
         }
+
+        // Reset countdown after refresh
+        if (isMounted) {
+          setCountdown(30);
+        }
       } catch (err) {
         console.error('Monitoring error:', err);
+      } finally {
+        if (isMounted) {
+          setIsRefreshing(false);
+        }
       }
     }, 30000); // 30 seconds
 
     return () => {
-      console.log(`🔴 Monitoring stopped for ${presaleData.token.symbol}`);
+      isMounted = false;
       clearInterval(interval);
+      clearInterval(countdownInterval);
+      console.log(`🔴 Monitoring stopped for ${presaleData.token.symbol}`);
     };
   }, [monitoring, presaleData, selectedChain, resolveChainId]);
 
@@ -1093,7 +1127,19 @@ const PresaleChecker = () => {
                     <div className="mt-4 text-sm text-gray-300">
                       <p>✅ Monitoring active for {presaleData.token.symbol}</p>
                       <p className="text-xs text-gray-500 mt-1">Alerts: Ownership Change, Liquidity Removed, Whale Sell</p>
-                      <p className="text-xs text-green-400 mt-1">🔄 Auto-refresh every 30 seconds</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        {isRefreshing ? (
+                          <div className="flex items-center gap-2 text-green-400">
+                            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span>Refreshing...</span>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-green-400">🔄 Next refresh in {countdown}s</p>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
