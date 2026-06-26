@@ -248,15 +248,20 @@ const getExplorerLink = (address, chain) => {
   return baseUrls[chain] ? baseUrls[chain] + address : null;
 };
 
+// --- FIXED: DexScreener link for all chains ---
 const getDexLink = (address, chain) => {
-  const dexUrls = {
-    bsc: `https://pancakeswap.finance/info/token/${address}`,
-    ethereum: `https://app.uniswap.org/#/tokens/${address}`,
-    polygon: `https://app.quickswap.exchange/#/tokens/${address}`,
-    arbitrum: `https://app.uniswap.org/#/tokens/${address}`,
-    solana: `https://dexscreener.com/solana/${address}`,
+  const chainMap = {
+    bsc: 'bsc',
+    ethereum: 'ethereum',
+    polygon: 'polygon',
+    arbitrum: 'arbitrum',
+    optimism: 'optimism',
+    avalanche: 'avalanche',
+    base: 'base',
+    solana: 'solana',
   };
-  return dexUrls[chain] || null;
+  const chainName = chainMap[chain] || 'ethereum';
+  return `https://dexscreener.com/${chainName}/${address}`;
 };
 
 // --- Trading Activity Score ---
@@ -1001,6 +1006,7 @@ const LpLockChecker = () => {
       setLoading(false);
     }
   };
+
 
   // --- Part 2 will have the JSX return and export ---
 
