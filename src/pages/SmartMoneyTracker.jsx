@@ -1206,62 +1206,61 @@ const SmartMoneyTracker = () => {
               </div>
             </div>
 
-            {/* 🆕 Charts: DexScreener + ApeSpace */}
+            {/* 🆕 EXPLORER LINKS – Buttons (replaces iframe charts) */}
             {(smartData.pairAddress || smartData.address) && (
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-8">
                 <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-                  <BarChart3 className="text-blue-400" /> Price Charts
+                  <ExternalLink className="text-blue-400" /> Explorer Links
                 </h2>
-                <div className="grid lg:grid-cols-2 gap-6">
-                  {/* DexScreener */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {/* 1. View Contract (Explorer) */}
+                  {smartData.address && getExplorerLink(smartData.address, smartData.chain) && (
+                    <a
+                      href={getExplorerLink(smartData.address, smartData.chain)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="bg-gray-800 hover:bg-blue-600/30 border border-gray-700 hover:border-blue-500 rounded-xl p-4 text-center transition flex flex-col items-center gap-2"
+                    >
+                      <span className="text-2xl">🔗</span>
+                      <span className="font-bold">View Contract</span>
+                      <span className="text-xs text-gray-400">Explorer</span>
+                    </a>
+                  )}
+
+                  {/* 2. View Chart (DexScreener) */}
                   {smartData.pairAddress ? (
-                    <div className="bg-gray-800 rounded-xl p-3">
-                      <p className="text-xs text-gray-400 mb-2 flex items-center gap-1">
-                        📈 DexScreener – {smartData.chainDisplay}
-                      </p>
-                      <iframe
-                        src={`https://dexscreener.com/${smartData.chain}/${smartData.pairAddress}?embed=1&theme=dark`}
-                        width="100%"
-                        height="400"
-                        style={{ border: 'none', borderRadius: '8px' }}
-                        title="DexScreener Chart"
-                        loading="lazy"
-                      />
-                    </div>
+                    <a
+                      href={`https://dexscreener.com/${smartData.chain}/${smartData.pairAddress}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="bg-gray-800 hover:bg-purple-600/30 border border-gray-700 hover:border-purple-500 rounded-xl p-4 text-center transition flex flex-col items-center gap-2"
+                    >
+                      <span className="text-2xl">📈</span>
+                      <span className="font-bold">View Chart</span>
+                      <span className="text-xs text-gray-400">DexScreener</span>
+                    </a>
                   ) : (
-                    <div className="bg-gray-800 rounded-xl p-6 text-center text-gray-400">
-                      <p>DexScreener chart unavailable – no pair data.</p>
+                    <div className="bg-gray-800 rounded-xl p-4 text-center text-gray-500 text-sm">
+                      Chart unavailable
                     </div>
                   )}
 
-                  {/* ApeSpace */}
-                  {smartData.address && smartData.chain && (
-                    <div className="bg-gray-800 rounded-xl p-3">
-                      <p className="text-xs text-gray-400 mb-2 flex items-center gap-1">
-                        📊 ApeSpace – {smartData.chainDisplay}
-                      </p>
-                      <iframe
-                        src={`https://apespace.io/embed/chart?chain=${smartData.chain}&token=${smartData.address}`}
-                        width="100%"
-                        height="400"
-                        style={{ border: 'none', borderRadius: '8px' }}
-                        title="ApeSpace Chart"
-                        loading="lazy"
-                        onError={(e) => {
-                          e.target.style.display = 'none';
-                          // Optionally show fallback message
-                          const parent = e.target.parentElement;
-                          const fallback = document.createElement('div');
-                          fallback.className = 'text-gray-400 text-center py-8';
-                          fallback.innerText = 'ApeSpace chart not available for this token/chain.';
-                          parent.appendChild(fallback);
-                        }}
-                      />
-                    </div>
+                  {/* 3. Search (DexScreener search) */}
+                  {smartData.address && (
+                    <a
+                      href={`https://dexscreener.com/search?q=${smartData.address}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="bg-gray-800 hover:bg-green-600/30 border border-gray-700 hover:border-green-500 rounded-xl p-4 text-center transition flex flex-col items-center gap-2"
+                    >
+                      <span className="text-2xl">🔍</span>
+                      <span className="font-bold">Search</span>
+                      <span className="text-xs text-gray-400">DexScreener</span>
+                    </a>
                   )}
                 </div>
                 <p className="text-xs text-gray-500 mt-3 text-center">
-                  Charts powered by DexScreener and ApeSpace. Data may be delayed.
+                  Click any button to open in new tab. Charts powered by DexScreener.
                 </p>
               </div>
             )}
