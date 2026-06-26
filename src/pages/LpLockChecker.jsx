@@ -172,7 +172,7 @@ const getLPtoMCRatio = (liquidity, marketCap) => {
   return { label: '🔴 Low', color: 'text-red-400' };
 };
 
-// --- Buy Pressure ---
+// --- Buy Pressure (fixed label) ---
 const getBuyPressure = (buyVolume, sellVolume) => {
   const buy = parseFloat(buyVolume) || 0;
   const sell = parseFloat(sellVolume) || 0;
@@ -180,7 +180,7 @@ const getBuyPressure = (buyVolume, sellVolume) => {
   if (total === 0) return null;
   const pressure = (buy / total) * 100;
   if (pressure > 65) return { label: 'Bullish', color: 'text-green-400', value: pressure };
-  if (pressure > 55) return { label: 'Neutral', color: 'text-yellow-400', value: pressure };
+  if (pressure >= 55) return { label: 'Neutral', color: 'text-yellow-400', value: pressure };
   return { label: 'Bearish', color: 'text-red-400', value: pressure };
 };
 
@@ -621,8 +621,12 @@ const LpLockChecker = () => {
       const canSetTax = security.canSetTax || false;
       const canWithdraw = security.canWithdraw || false;
 
-      const top10Ratio = holders.top10Ratio !== 'N/A' ? parseFloat(holders.top10Ratio) : 'N/A';
-      const top5Ratio = holders.top5Ratio !== 'N/A' ? parseFloat(holders.top5Ratio) : 'N/A';
+      // Fix: handle NaN for top5Ratio
+      let top10Ratio = holders.top10Ratio !== 'N/A' ? parseFloat(holders.top10Ratio) : 'N/A';
+      let top5Ratio = holders.top5Ratio !== 'N/A' ? parseFloat(holders.top5Ratio) : 'N/A';
+      if (isNaN(top5Ratio)) top5Ratio = 'N/A';
+      if (isNaN(top10Ratio)) top10Ratio = 'N/A';
+
       const creatorPercent = holders.creatorPercent !== 'N/A' ? parseFloat(holders.creatorPercent) : 'N/A';
       const holderCount = holders.count || 'N/A';
       const creatorAddress = holders.creatorAddress || 'N/A';
@@ -716,8 +720,133 @@ const LpLockChecker = () => {
         community: Math.max(0, 100 - (isLocked ? lockedPercent : 0) - (isBurned ? 5 : 0) - (typeof creatorPercent === 'number' ? creatorPercent : 0)),
       };
 
-      const securityScore = data.securityScore || 0;
-      const rugProb = data.rugProbability || 0;
+      // Fix Security Score: ensure positive points are considered
+      const computeSecurityScore = (data) => {
+        if (data.honeypot) return 0;
+        let score = 50; // base
+
+        // LP Lock
+        if (data.locked) {
+          score += (data.lockedPercent / 100) * 25;
+        } else {
+          score -= 15;
+        }
+
+        // Unlock danger
+        if (data.unlockDays !== null && data.unlockDays !== undefined) {
+          if (data.unlockDays < 7) score -= 25;
+          else if (data.unlockDays < 30) score -= 15;
+        }
+
+        // Ownership
+        if (data.ownershipRenounced) score += 15;
+        else score -= 10;
+
+        // Verification
+        if (data.verification?.verified) score += 15;
+        else score -= 5;
+
+        // Mint
+        if (!data.mintable) score += 15;
+        else score -= 15;
+
+        // Proxy
+        if (!data.proxy) score += 10;
+        else score -= 5;
+
+        // Blacklist
+        if (!data.blacklist) score += 5;
+        else score -= 5;
+
+        // Liquidity
+        const liq = parseFloat(data.totalLiquidity) || 0;
+        if (liq > 1000000) score += 10;
+        else if (liq > 100000) score += 7;
+        else if (liq > 10000) score += 4;
+        else if (liq > 1000) score += 2;
+
+        // Tax
+        if (data.buyTax > 10 || data.sellTax > 10) score -= 15;
+        else if (data.buyTax > 5 || data.sellTax > 5) score -= 8;
+
+        // Age
+        if (data.contractAgeDays && data.contractAgeDays > 90) score += 5;
+        else if (data.contractAgeDays && data.contractAgeDays < 7) score -= 15;
+
+        // Holder concentration
+        const creator = parseFloat(data.creatorPercent) || 0;
+        if (creator > 50) score -= 30;
+        else if (creator > 30) score -= 20;
+        else if (creator > 20) score -= 10;
+
+        // Social presence
+        if (data.social && (data.social.website !== 'N/A' || data.social.twitter !== 'N/A' || data.social.telegram !== 'N/A')) {
+          score += 5;
+        }
+
+        // LP Burn – small bonus
+        if (data.lpBurned) score += 5;
+
+        // Mint + Ownership combo
+        if (data.mintable && !data.ownershipRenounced) score -= 15;
+
+        return Math.max(0, Math.min(100, Math.round(score)));
+      };
+
+      const securityScore = computeSecurityScore({
+        locked: isLocked,
+        lockedPercent,
+        unlockDays,
+        ownershipRenounced,
+        verification,
+        mintable,
+        proxy,
+        blacklist,
+        totalLiquidity,
+        buyTax,
+        sellTax,
+        contractAgeDays,
+        creatorPercent,
+        social,
+        lpBurned: isBurned,
+        honeypot,
+      });
+
+      // Rug Probability (weighted)
+      const computeRugProbability = (data) => {
+        let riskScore = 0;
+        if (!data.locked) riskScore += 20;
+        if (!data.ownershipRenounced) riskScore += 15;
+        if (data.mintable) riskScore += 15;
+        if (data.honeypot) riskScore += 30;
+        if (!data.verification?.verified) riskScore += 10;
+        if (data.proxy) riskScore += 8;
+        if (data.blacklist) riskScore += 5;
+        if (data.buyTax > 10 || data.sellTax > 10) riskScore += 10;
+        if (data.creatorPercent > 50) riskScore += 20;
+        else if (data.creatorPercent > 30) riskScore += 15;
+        else if (data.creatorPercent > 20) riskScore += 10;
+        if (data.contractAgeDays && data.contractAgeDays < 7) riskScore += 15;
+        if (data.unlockDays !== null && data.unlockDays < 7) riskScore += 20;
+        if (data.unlockDays !== null && data.unlockDays < 30) riskScore += 10;
+        return Math.min(100, Math.round(riskScore));
+      };
+
+      const rugProb = computeRugProbability({
+        locked: isLocked,
+        ownershipRenounced,
+        mintable,
+        honeypot,
+        verification,
+        proxy,
+        blacklist,
+        buyTax,
+        sellTax,
+        creatorPercent,
+        contractAgeDays,
+        unlockDays,
+      });
+
       const grade = getSecurityGrade(securityScore);
       const lockerBadge = getLockerBadge(locker);
       const isSolana = isSolanaChain(token.chain);
@@ -877,10 +1006,34 @@ const LpLockChecker = () => {
 
   // --- Render ---
   return (
-    <div className="min-h-screen bg-gray-950 text-white px-6 py-10">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="text-center mb-10">
+    <div className="min-h-screen bg-gray-950 text-white px-6 py-10 flex flex-col">
+      <div className="max-w-6xl mx-auto w-full flex-1">
+        {/* Header with back and refresh buttons */}
+        <div className="text-center mb-10 relative">
+          {lockData && (
+            <button
+              onClick={() => {
+                setLockData(null);
+                setError(null);
+                setTokenAddress('');
+                document.getElementById('tokenInput')?.focus();
+              }}
+              className="absolute left-0 top-1/2 -translate-y-1/2 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-full text-lg shadow-lg transition z-10"
+              title="Go back"
+            >
+              ←
+            </button>
+          )}
+          {lockData && (
+            <button
+              onClick={handleCheck}
+              disabled={loading}
+              className="absolute right-0 top-1/2 -translate-y-1/2 bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded-full text-lg shadow-lg transition disabled:opacity-50 z-10"
+              title="Refresh data"
+            >
+              ⟳
+            </button>
+          )}
           <h1 className="text-5xl font-bold mb-4">🔒 LP Lock Checker</h1>
           <p className="text-gray-400 text-lg">Verify liquidity lock status and detect rug-pull risks.</p>
         </div>
@@ -889,6 +1042,7 @@ const LpLockChecker = () => {
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-8">
           <div className="grid md:grid-cols-4 gap-4">
             <input
+              id="tokenInput"
               type="text"
               placeholder="Token Contract Address"
               value={tokenAddress}
@@ -1135,7 +1289,7 @@ const LpLockChecker = () => {
               </div>
             </div>
 
-            {/* ★ MARKET HEALTH SUMMARY CARD ★ */}
+            {/* Market Health Summary Card */}
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-8">
               <div className="flex items-center gap-4 mb-4">
                 <Gauge className="text-blue-400" size={28} />
@@ -1174,6 +1328,14 @@ const LpLockChecker = () => {
                   </div>
                 </div>
               </div>
+              {lockData.marketHealthScore < 70 && (
+                <div className="mt-4 text-sm text-yellow-400">
+                  ⚠️ Low market health due to {lockData.liquidityChange24h !== null && lockData.liquidityChange24h < 0 ? 'liquidity decline, ' : ''}
+                  {lockData.volumeSpike?.value < -20 && 'low volume, '}
+                  {lockData.holderGrowth <= 0 && 'stagnant holder growth, '}
+                  and moderate buy pressure.
+                </div>
+              )}
             </div>
 
             {/* Market Data Section */}
@@ -1191,19 +1353,19 @@ const LpLockChecker = () => {
                 <div className="bg-gray-800 p-3 rounded-xl">
                   <div className="text-sm text-gray-400">5m</div>
                   <div className={`text-lg font-bold ${lockData.priceChange5m !== 'N/A' && parseFloat(lockData.priceChange5m) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {formatPercent(lockData.priceChange5m)}
+                    {lockData.priceChange5m !== 'N/A' ? formatPercent(lockData.priceChange5m) : '--'}
                   </div>
                 </div>
                 <div className="bg-gray-800 p-3 rounded-xl">
                   <div className="text-sm text-gray-400">1h</div>
                   <div className={`text-lg font-bold ${lockData.priceChange1h !== 'N/A' && parseFloat(lockData.priceChange1h) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {formatPercent(lockData.priceChange1h)}
+                    {lockData.priceChange1h !== 'N/A' ? formatPercent(lockData.priceChange1h) : '--'}
                   </div>
                 </div>
                 <div className="bg-gray-800 p-3 rounded-xl">
                   <div className="text-sm text-gray-400">6h</div>
                   <div className={`text-lg font-bold ${lockData.priceChange6h !== 'N/A' && parseFloat(lockData.priceChange6h) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {formatPercent(lockData.priceChange6h)}
+                    {lockData.priceChange6h !== 'N/A' ? formatPercent(lockData.priceChange6h) : '--'}
                   </div>
                 </div>
                 <div className="bg-gray-800 p-3 rounded-xl">
@@ -1214,7 +1376,7 @@ const LpLockChecker = () => {
                 </div>
               </div>
 
-              {/* Candle Trend + ATH Recovery */}
+              {/* Candle Trend + ATH Recovery + FDV */}
               <div className="grid md:grid-cols-3 gap-4 mb-4">
                 <div className="bg-gray-800 p-3 rounded-xl">
                   <div className="text-sm text-gray-400">Candle Trend</div>
@@ -1581,7 +1743,7 @@ const LpLockChecker = () => {
             </div>
 
             {/* Explorer Links */}
-            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-8">
               <h2 className="text-2xl font-bold mb-4">🔗 Explorer Links</h2>
               <div className="flex flex-wrap gap-4">
                 {getExplorerLink(lockData.address, lockData.chain) && (
@@ -1609,6 +1771,33 @@ const LpLockChecker = () => {
           </div>
         )}
       </div>
+
+      {/* Footer */}
+      <footer className="max-w-6xl mx-auto w-full mt-12 pt-6 border-t border-gray-800">
+        <div className="bg-gray-900/50 p-4 rounded-xl border border-gray-800 text-center text-xs text-gray-400">
+          <p className="font-semibold text-white text-sm">🤖 Solt LP Lock Checker</p>
+          <p className="mt-1">
+            Data Sources: <span className="text-purple-400">GoPlus Security</span>,{' '}
+            <span className="text-blue-400">DexScreener</span>,{' '}
+            <span className="text-green-400">CoinGecko</span>,{' '}
+            <span className="text-cyan-400">Solscan</span>, and Public Blockchain Data.
+          </p>
+          <p className="mt-1 text-[10px] text-gray-500 max-w-2xl mx-auto">
+            Information is aggregated from third-party providers and on-chain analysis.
+            May be delayed or incomplete. Always do your own research.
+          </p>
+          <p className="mt-1 text-[10px] text-gray-500">
+            © 2026 Solt LP Lock Checker — By Soltchain Technologies. All Rights Reserved.
+          </p>
+          <div className="mt-3 flex flex-wrap justify-center gap-4 text-[10px]">
+            <a href="#" className="hover:text-purple-400 transition">Products</a>
+            <a href="#" className="hover:text-purple-400 transition">Company</a>
+            <a href="#" className="hover:text-purple-400 transition">Resources</a>
+            <a href="#" className="hover:text-purple-400 transition">Terms of Use</a>
+            <a href="#" className="hover:text-purple-400 transition">Privacy Policy</a>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 };
