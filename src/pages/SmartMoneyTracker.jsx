@@ -94,6 +94,9 @@ const getExplorerLink = (address, chain) => {
   return baseUrls[chain] ? baseUrls[chain] + address : null;
 };
 
+// --- Stablecoins list ---
+const STABLECOINS = ['USDT', 'USDC', 'BUSD', 'DAI', 'USDC.E', 'TUSD', 'FRAX'];
+
 // --- Smart Money Score (derived from real data) ---
 const calculateSmartMoneyScore = (data) => {
   let score = 50;
@@ -198,6 +201,8 @@ const SmartMoneyTracker = () => {
     const rank = data.rank || 'N/A';
     const isEstablished = data.isEstablished || false;
     const projectHealthScore = data.projectHealthScore || 'N/A';
+    const pairAddress = market?.pairAddress || '';
+    const chain = token.chain || 'bsc';
 
     // --- REAL DATA FROM BACKEND ---
     const topWallets = holders.topHolders || [];
@@ -281,12 +286,13 @@ const SmartMoneyTracker = () => {
       holderQuality = { diamond: 20, paper: 40, bots: 40 };
     }
 
-    // Smart Wallet Performance (from real data)
+    // Smart Wallet Performance (only if trackedWallets > 0)
+    const hasSmartActivity = trackedWallets > 0 && (parseFloat(whaleBuys) > 0 || parseFloat(whaleSells) > 0);
     const ss = parseFloat(securityScore) || 0;
     const wn = parseFloat(whaleNet) || 0;
-    const winRate = Math.min(92, 60 + (ss / 100) * 20 + (wn > 0 ? 10 : 0));
-    const roi = Math.min(187, 50 + (ss / 100) * 80 + (wn / 100) * 10);
-    const performance = { winRate: Math.round(winRate), roi: Math.round(roi) };
+    const winRate = hasSmartActivity ? Math.min(92, 60 + (ss / 100) * 20 + (wn > 0 ? 10 : 0)) : 'N/A';
+    const roi = hasSmartActivity ? Math.min(187, 50 + (ss / 100) * 80 + (wn / 100) * 10) : 'N/A';
+    const performance = { winRate, roi };
 
     // Whale Profit (from real data)
     const wProfit = parseFloat(whaleNet) || 0;
@@ -295,12 +301,14 @@ const SmartMoneyTracker = () => {
       label: wProfit > 0 ? 'Green' : 'Red',
     };
 
-    // Entry Zone (from real price & ATH)
+    // Entry Zone (only if not stablecoin)
+    const tokenSymbol = token.symbol || '';
+    const isStable = STABLECOINS.includes(tokenSymbol.toUpperCase());
     const currentPrice = parseFloat(price) || 0;
     const athPrice = parseFloat(ath) || 0;
     let entryZone = 'N/A';
     let takeProfit = 'N/A';
-    if (currentPrice > 0) {
+    if (!isStable && currentPrice > 0) {
       entryZone = (currentPrice * 0.85).toFixed(6);
       takeProfit = athPrice > 0 ? (athPrice * 0.9).toFixed(6) : (currentPrice * 1.5).toFixed(6);
     }
@@ -318,13 +326,14 @@ const SmartMoneyTracker = () => {
       deposit: sellVol > buyVol ? formatCurrency((sellVol - buyVol) * 0.4) : 'N/A',
     };
 
-    // Whale Alert (from real data)
-    const whaleAlert = {
+    // Whale Alert (only if real amount)
+    const whaleAlertAmount = parseFloat(whaleNet) || 0;
+    const whaleAlert = (whaleAlertAmount !== 0 && hasSmartActivity) ? {
       address: '0x83A...7E2', // Placeholder - needs backend
-      action: parseFloat(whaleNet) > 0 ? 'Bought' : 'Sold',
-      amount: formatCurrency(parseFloat(whaleNet) || 0),
+      action: whaleAlertAmount > 0 ? 'Bought' : 'Sold',
+      amount: formatCurrency(whaleAlertAmount),
       time: 'Just now',
-    };
+    } : null;
 
     // Transaction History (from real whale data)
     const transactions = [];
@@ -346,41 +355,60 @@ const SmartMoneyTracker = () => {
         txHash: '0x91d...',
       });
     }
-    if (transactions.length === 0 && parseFloat(whaleNet) > 0) {
+    // Only if actual net flow exists
+    if (transactions.length === 0 && whaleAlertAmount !== 0) {
       transactions.push({
-        type: 'buy',
-        amount: whaleNet,
+        type: whaleAlertAmount > 0 ? 'buy' : 'sell',
+        amount: formatCurrency(whaleAlertAmount),
         time: '5 min ago',
         wallet: '0xA12...5CE',
         txHash: '0xa12...',
       });
     }
 
-    // Timeline (from real data)
+    // Timeline (only if there is actual activity)
     const timeline = [];
-    if (parseFloat(whaleNet) > 0) {
-      timeline.push({ time: 'Now', event: 'Whale Buy', desc: formatCurrency(whaleNet) });
-    }
-    if (buyVol > sellVol) {
-      timeline.push({ time: '5m ago', event: 'Smart Wallet Buy', desc: 'Accumulating' });
-    }
-    if (parseFloat(whaleNet) > 0 && buyVol > 0) {
-      timeline.push({ time: '10m ago', event: 'CEX Withdraw', desc: 'Large' });
+    if (hasSmartActivity && whaleAlertAmount !== 0) {
+      if (whaleAlertAmount > 0) {
+        timeline.push({ time: 'Now', event: 'Whale Buy', desc: formatCurrency(whaleAlertAmount) });
+      } else {
+        timeline.push({ time: 'Now', event: 'Whale Sell', desc: formatCurrency(whaleAlertAmount) });
+      }
+      if (buyVol > sellVol) {
+        timeline.push({ time: '5m ago', event: 'Smart Wallet Buy', desc: 'Accumulating' });
+      } else if (sellVol > buyVol) {
+        timeline.push({ time: '5m ago', event: 'Smart Wallet Sell', desc: 'Distributing' });
+      }
+      if (parseFloat(whaleNet) > 0 && buyVol > 0) {
+        timeline.push({ time: '10m ago', event: 'CEX Withdraw', desc: 'Large' });
+      }
     }
     if (timeline.length === 0) {
       timeline.push({ time: 'Now', event: 'No Activity', desc: 'Waiting for data' });
     }
 
     // AI Prediction (from real aiVerdict)
-    const aiPrediction = aiVerdict.includes('Bullish') ? 'Bullish' :
-                         aiVerdict.includes('Bearish') ? 'Bearish' : 'Neutral';
-    const aiProbability = aiVerdict.includes('Bullish') ? 85 :
-                          aiVerdict.includes('Bearish') ? 65 : 50;
+    let aiPrediction = 'Neutral';
+    let aiProbability = 50;
+    if (!isStable) {
+      aiPrediction = aiVerdict.includes('Bullish') ? 'Bullish' :
+                     aiVerdict.includes('Bearish') ? 'Bearish' : 'Neutral';
+      aiProbability = aiVerdict.includes('Bullish') ? 85 :
+                      aiVerdict.includes('Bearish') ? 65 : 50;
+    } else {
+      aiPrediction = 'Stable Asset';
+      aiProbability = 100;
+    }
 
     // Copy Signal (from real overallRecommendation)
-    const copySignal = overallRecommendation.includes('Safe') ? 'Strong Buy' :
-                       overallRecommendation.includes('Caution') ? 'Buy' :
-                       overallRecommendation.includes('Wait') ? 'Wait' : 'Exit';
+    let copySignal = 'N/A';
+    if (!isStable) {
+      copySignal = overallRecommendation.includes('Safe') ? 'Strong Buy' :
+                   overallRecommendation.includes('Caution') ? 'Buy' :
+                   overallRecommendation.includes('Wait') ? 'Wait' : 'Exit';
+    } else {
+      copySignal = 'No Trade (Stable)';
+    }
 
     // Chart data - based on available data
     const chartData = {
@@ -448,6 +476,11 @@ const SmartMoneyTracker = () => {
       liqPercent,
       liqUnlockDate,
       liqLocker,
+      // Stablecoin flag
+      isStable,
+      // Chart URL builders
+      pairAddress,
+      chainDisplay: getChainDisplay(chain),
       // Raw data for debug
       rawData: data,
     };
@@ -595,6 +628,7 @@ const SmartMoneyTracker = () => {
         copySignal: smartData.copySignal,
         securityScore: smartData.securityScore,
         isEstablished: smartData.isEstablished,
+        isStable: smartData.isStable,
         exportedAt: new Date().toISOString(),
       };
       
@@ -723,8 +757,9 @@ const SmartMoneyTracker = () => {
                   Token: <span className="text-white font-bold">{smartData.tokenName} ({smartData.tokenSymbol})</span> &nbsp;|&nbsp; Chain: <span className="text-white font-bold">{getChainDisplay(smartData.chain)}</span>
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
-                  Rank #{smartData.rank} | Holders: {formatNumber(smartData.holderCount)} | MC: {formatCurrency(smartData.marketCap)}
+                  Rank #{smartData.rank} | Holders: {formatNumber(smartData.holderCount)} | MC ({smartData.chainDisplay}): {formatCurrency(smartData.marketCap)}
                   {smartData.isEstablished && <span className="ml-2 text-blue-400">✅ Established</span>}
+                  {smartData.isStable && <span className="ml-2 text-green-400">🟢 Stablecoin</span>}
                 </p>
                 {smartData.liqLocked && (
                   <p className="text-xs text-green-400 mt-1">
@@ -857,68 +892,72 @@ const SmartMoneyTracker = () => {
               </div>
             </div>
 
-            {/* Smart Wallet Performance */}
-            <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-8">
-              <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-                <Crown className="text-yellow-400" /> Smart Wallet Performance
-              </h2>
-              <div className="grid md:grid-cols-3 gap-4">
-                <div className="bg-gray-800 p-4 rounded-xl text-center">
-                  <p className="text-gray-400 text-sm">Win Rate (Est.)</p>
-                  <p className="text-3xl font-bold text-green-400">{smartData.performance.winRate}%</p>
-                  <p className="text-xs text-gray-500">Based on security score</p>
-                </div>
-                <div className="bg-gray-800 p-4 rounded-xl text-center">
-                  <p className="text-gray-400 text-sm">Average ROI (Est.)</p>
-                  <p className="text-3xl font-bold text-blue-400">+{smartData.performance.roi}%</p>
-                  <p className="text-xs text-gray-500">Based on whale flow</p>
-                </div>
-                <div className="bg-gray-800 p-4 rounded-xl text-center">
-                  <p className="text-gray-400 text-sm">Whale Profit (30d)</p>
-                  <p className={`text-3xl font-bold ${smartData.whaleProfit.label === 'Green' ? 'text-green-400' : 'text-red-400'}`}>
-                    {smartData.whaleProfit.profit}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Whale Alert & Timeline */}
-            <div className="grid lg:grid-cols-2 gap-6 mb-8">
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+            {/* Smart Wallet Performance - only if there is smart activity */}
+            {smartData.trackedWallets > 0 && (smartData.performance.winRate !== 'N/A') && (
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-8">
                 <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-                  <Flame className="text-orange-400" /> 🚨 Whale Alert
+                  <Crown className="text-yellow-400" /> Smart Wallet Performance
                 </h2>
-                <div className="bg-gray-800 rounded-xl p-4 border border-yellow-600/30">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-bold text-yellow-400">
-                        {smartData.whaleAlert.action} {smartData.whaleAlert.amount}
-                      </p>
-                      <p className="text-gray-400 text-sm">Wallet: {smartData.whaleAlert.address}</p>
-                      <p className="text-gray-500 text-xs">{smartData.whaleAlert.time}</p>
-                    </div>
-                    <span className="text-3xl animate-pulse">🚨</span>
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div className="bg-gray-800 p-4 rounded-xl text-center">
+                    <p className="text-gray-400 text-sm">Win Rate (Est.)</p>
+                    <p className="text-3xl font-bold text-green-400">{smartData.performance.winRate}%</p>
+                    <p className="text-xs text-gray-500">Based on security score</p>
+                  </div>
+                  <div className="bg-gray-800 p-4 rounded-xl text-center">
+                    <p className="text-gray-400 text-sm">Average ROI (Est.)</p>
+                    <p className="text-3xl font-bold text-blue-400">+{smartData.performance.roi}%</p>
+                    <p className="text-xs text-gray-500">Based on whale flow</p>
+                  </div>
+                  <div className="bg-gray-800 p-4 rounded-xl text-center">
+                    <p className="text-gray-400 text-sm">Whale Profit (30d)</p>
+                    <p className={`text-3xl font-bold ${smartData.whaleProfit.label === 'Green' ? 'text-green-400' : 'text-red-400'}`}>
+                      {smartData.whaleProfit.profit}
+                    </p>
                   </div>
                 </div>
               </div>
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-                <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-                  <Clock className="text-blue-400" /> Smart Money Timeline
-                </h2>
-                <div className="space-y-3">
-                  {smartData.timeline.map((event, idx) => (
-                    <div key={idx} className="flex items-center gap-4 bg-gray-800 p-3 rounded-xl">
-                      <div className={`w-2 h-2 rounded-full ${event.event.includes('Buy') ? 'bg-green-400' : event.event.includes('Sell') ? 'bg-red-400' : 'bg-yellow-400'}`} />
-                      <div className="flex-1">
-                        <p className="font-semibold">{event.event}</p>
-                        <p className="text-gray-400 text-sm">{event.desc}</p>
+            )}
+
+            {/* Whale Alert & Timeline - only if there is activity */}
+            {smartData.whaleAlert && smartData.timeline.some(e => e.event !== 'No Activity') && (
+              <div className="grid lg:grid-cols-2 gap-6 mb-8">
+                <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+                  <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                    <Flame className="text-orange-400" /> 🚨 Whale Alert
+                  </h2>
+                  <div className="bg-gray-800 rounded-xl p-4 border border-yellow-600/30">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-bold text-yellow-400">
+                          {smartData.whaleAlert.action} {smartData.whaleAlert.amount}
+                        </p>
+                        <p className="text-gray-400 text-sm">Wallet: {smartData.whaleAlert.address}</p>
+                        <p className="text-gray-500 text-xs">{smartData.whaleAlert.time}</p>
                       </div>
-                      <span className="text-gray-500 text-xs">{event.time}</span>
+                      <span className="text-3xl animate-pulse">🚨</span>
                     </div>
-                  ))}
+                  </div>
+                </div>
+                <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+                  <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                    <Clock className="text-blue-400" /> Smart Money Timeline
+                  </h2>
+                  <div className="space-y-3">
+                    {smartData.timeline.filter(e => e.event !== 'No Activity').map((event, idx) => (
+                      <div key={idx} className="flex items-center gap-4 bg-gray-800 p-3 rounded-xl">
+                        <div className={`w-2 h-2 rounded-full ${event.event.includes('Buy') ? 'bg-green-400' : event.event.includes('Sell') ? 'bg-red-400' : 'bg-yellow-400'}`} />
+                        <div className="flex-1">
+                          <p className="font-semibold">{event.event}</p>
+                          <p className="text-gray-400 text-sm">{event.desc}</p>
+                        </div>
+                        <span className="text-gray-500 text-xs">{event.time}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Transaction History with Filters */}
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-8">
@@ -1103,23 +1142,35 @@ const SmartMoneyTracker = () => {
                   <Brain className="text-purple-400" /> AI Smart Money Analysis
                 </h2>
                 <div className="bg-gray-800 rounded-xl p-5 space-y-4">
-                  <p className="text-gray-300 leading-relaxed">{smartData.summary || smartData.aiVerdict || 'No analysis available'}</p>
+                  <p className="text-gray-300 leading-relaxed">
+                    {smartData.isStable 
+                      ? `🟢 ${smartData.tokenSymbol} is a stablecoin. No active trading signal.` 
+                      : (smartData.summary || smartData.aiVerdict || 'No analysis available')}
+                  </p>
                   <div className="flex flex-wrap gap-3">
-                    <span className={`inline-block px-4 py-2 rounded-lg ${
-                      smartData.aiPrediction === 'Bullish' ? 'bg-green-500/20 text-green-400' :
-                      smartData.aiPrediction === 'Bearish' ? 'bg-red-500/20 text-red-400' :
-                      'bg-yellow-500/20 text-yellow-400'
-                    }`}>
-                      🤖 {smartData.aiPrediction} ({smartData.aiProbability}%)
-                    </span>
-                    <span className={`inline-block px-4 py-2 rounded-lg ${
-                      smartData.copySignal === 'Strong Buy' ? 'bg-green-500/20 text-green-400' :
-                      smartData.copySignal === 'Buy' ? 'bg-green-500/10 text-green-300' :
-                      smartData.copySignal === 'Wait' ? 'bg-yellow-500/20 text-yellow-400' :
-                      'bg-red-500/20 text-red-400'
-                    }`}>
-                      📊 Copy: {smartData.copySignal}
-                    </span>
+                    {smartData.isStable ? (
+                      <span className="inline-block px-4 py-2 rounded-lg bg-blue-500/20 text-blue-400">
+                        🟢 Stable Asset – No trading signal
+                      </span>
+                    ) : (
+                      <>
+                        <span className={`inline-block px-4 py-2 rounded-lg ${
+                          smartData.aiPrediction === 'Bullish' ? 'bg-green-500/20 text-green-400' :
+                          smartData.aiPrediction === 'Bearish' ? 'bg-red-500/20 text-red-400' :
+                          'bg-yellow-500/20 text-yellow-400'
+                        }`}>
+                          🤖 {smartData.aiPrediction} ({smartData.aiProbability}%)
+                        </span>
+                        <span className={`inline-block px-4 py-2 rounded-lg ${
+                          smartData.copySignal === 'Strong Buy' ? 'bg-green-500/20 text-green-400' :
+                          smartData.copySignal === 'Buy' ? 'bg-green-500/10 text-green-300' :
+                          smartData.copySignal === 'Wait' ? 'bg-yellow-500/20 text-yellow-400' :
+                          'bg-red-500/20 text-red-400'
+                        }`}>
+                          📊 Copy: {smartData.copySignal}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1128,26 +1179,92 @@ const SmartMoneyTracker = () => {
                 <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
                   <Gauge className="text-blue-400" /> Entry Zone
                 </h2>
-                <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Entry Zone</span>
-                    <span className="font-bold text-yellow-400">${smartData.entryZone}</span>
+                {smartData.isStable ? (
+                  <div className="text-gray-400 text-center py-6">
+                    🟢 Stablecoin – Entry zone not applicable
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Current Price</span>
-                    <span className="font-bold">${smartData.price !== 'N/A' ? parseFloat(smartData.price).toFixed(6) : 'N/A'}</span>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Entry Zone</span>
+                      <span className="font-bold text-yellow-400">${smartData.entryZone}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Current Price</span>
+                      <span className="font-bold">${smartData.price !== 'N/A' ? parseFloat(smartData.price).toFixed(6) : 'N/A'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Take Profit</span>
+                      <span className="font-bold text-green-400">${smartData.takeProfit}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">ATH</span>
+                      <span className="font-bold text-yellow-400">${smartData.ath !== 'N/A' ? parseFloat(smartData.ath).toFixed(6) : 'N/A'}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Take Profit</span>
-                    <span className="font-bold text-green-400">${smartData.takeProfit}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">ATH</span>
-                    <span className="font-bold text-yellow-400">${smartData.ath !== 'N/A' ? parseFloat(smartData.ath).toFixed(6) : 'N/A'}</span>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
+
+            {/* 🆕 Charts: DexScreener + ApeSpace */}
+            {(smartData.pairAddress || smartData.address) && (
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-8">
+                <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                  <BarChart3 className="text-blue-400" /> Price Charts
+                </h2>
+                <div className="grid lg:grid-cols-2 gap-6">
+                  {/* DexScreener */}
+                  {smartData.pairAddress ? (
+                    <div className="bg-gray-800 rounded-xl p-3">
+                      <p className="text-xs text-gray-400 mb-2 flex items-center gap-1">
+                        📈 DexScreener – {smartData.chainDisplay}
+                      </p>
+                      <iframe
+                        src={`https://dexscreener.com/${smartData.chain}/${smartData.pairAddress}?embed=1&theme=dark`}
+                        width="100%"
+                        height="400"
+                        style={{ border: 'none', borderRadius: '8px' }}
+                        title="DexScreener Chart"
+                        loading="lazy"
+                      />
+                    </div>
+                  ) : (
+                    <div className="bg-gray-800 rounded-xl p-6 text-center text-gray-400">
+                      <p>DexScreener chart unavailable – no pair data.</p>
+                    </div>
+                  )}
+
+                  {/* ApeSpace */}
+                  {smartData.address && smartData.chain && (
+                    <div className="bg-gray-800 rounded-xl p-3">
+                      <p className="text-xs text-gray-400 mb-2 flex items-center gap-1">
+                        📊 ApeSpace – {smartData.chainDisplay}
+                      </p>
+                      <iframe
+                        src={`https://apespace.io/embed/chart?chain=${smartData.chain}&token=${smartData.address}`}
+                        width="100%"
+                        height="400"
+                        style={{ border: 'none', borderRadius: '8px' }}
+                        title="ApeSpace Chart"
+                        loading="lazy"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          // Optionally show fallback message
+                          const parent = e.target.parentElement;
+                          const fallback = document.createElement('div');
+                          fallback.className = 'text-gray-400 text-center py-8';
+                          fallback.innerText = 'ApeSpace chart not available for this token/chain.';
+                          parent.appendChild(fallback);
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-3 text-center">
+                  Charts powered by DexScreener and ApeSpace. Data may be delayed.
+                </p>
+              </div>
+            )}
 
             {/* Live Monitoring */}
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
