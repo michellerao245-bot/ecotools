@@ -42,6 +42,39 @@ import {
 // --- Backend URL ---
 const BACKEND_URL = 'https://ecobackend-two.vercel.app/api/presale/check';
 
+// --- TRUSTED TOKEN WHITELIST (addresses & symbols) ---
+const TRUSTED_TOKENS = {
+  // Ethereum
+  '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48': { name: 'USDC', type: 'stablecoin' },
+  '0xdac17f958d2ee523a2206206994597c13d831ec7': { name: 'USDT', type: 'stablecoin' },
+  '0x6b175474e89094c44da98b954eedeac495271d0f': { name: 'DAI', type: 'stablecoin' },
+  '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599': { name: 'WBTC', type: 'wrapped' },
+  '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': { name: 'WETH', type: 'wrapped' },
+  '0x514910771af9ca656af840dff83e8264ecf986ca': { name: 'LINK', type: 'oracle' },
+  '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984': { name: 'UNI', type: 'dex' },
+  '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9': { name: 'AAVE', type: 'lending' },
+  // BSC
+  '0x55d398326f99059ff775485246999027b3197955': { name: 'USDT', type: 'stablecoin' },
+  '0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d': { name: 'USDC', type: 'stablecoin' },
+  '0xe9e7cea3dedca5984780bafc599bd69add087d56': { name: 'BUSD', type: 'stablecoin' },
+  '0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c': { name: 'WBNB', type: 'wrapped' },
+  '0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82': { name: 'CAKE', type: 'dex' },
+  // Polygon
+  '0x2791bca1f2de4661ed88a30c99a7a9449aa84174': { name: 'USDC', type: 'stablecoin' },
+  '0xc2132d05d31c914a87c6611c10748aeb04b58e8f': { name: 'USDT', type: 'stablecoin' },
+  '0x8f3cf7ad23cd3cadbd9735aff958023239c6a063': { name: 'DAI', type: 'stablecoin' },
+  '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619': { name: 'WETH', type: 'wrapped' },
+  // Arbitrum
+  '0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9': { name: 'USDT', type: 'stablecoin' },
+  '0xaf88d065e77c8cc2239327c5edb3a432268e5831': { name: 'USDC', type: 'stablecoin' },
+  '0xda10009cbd5d07dd0cecc66161fc93d7c9000da1': { name: 'DAI', type: 'stablecoin' },
+  '0x82af49447d8a07e3bd95bd0d56f35241523fbab1': { name: 'WETH', type: 'wrapped' },
+  // Avalanche
+  '0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7': { name: 'USDT', type: 'stablecoin' },
+  '0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e': { name: 'USDC', type: 'stablecoin' },
+  '0x49d5c2bdffac6ce2bfdb6640f4f80f226bc10bab': { name: 'WETH', type: 'wrapped' },
+};
+
 // --- Helpers ---
 const formatCurrency = (value) => {
   if (!value || value === 'N/A' || value === 0) return 'N/A';
@@ -172,7 +205,7 @@ const getLPtoMCRatio = (liquidity, marketCap) => {
   return { label: '🔴 Low', color: 'text-red-400' };
 };
 
-// --- Buy Pressure (fixed label) ---
+// --- Buy Pressure ---
 const getBuyPressure = (buyVolume, sellVolume) => {
   const buy = parseFloat(buyVolume) || 0;
   const sell = parseFloat(sellVolume) || 0;
@@ -366,6 +399,9 @@ const LpLockChecker = () => {
     const breakdown = [];
     const explanations = [];
 
+    // Check if token is established
+    const isEstablished = data.isEstablished || false;
+
     if (data.locked && data.lockedPercent > 80) {
       positives.push(`LP Locked ${data.lockedPercent}%`);
       breakdown.push({ type: 'positive', text: `LP locked ${data.lockedPercent}% (+${Math.round(data.lockedPercent / 5)})`, points: Math.round(data.lockedPercent / 5) });
@@ -374,10 +410,14 @@ const LpLockChecker = () => {
       positives.push('LP Burned');
       breakdown.push({ type: 'positive', text: 'LP Burned (+15)', points: 15 });
       explanations.push('✅ LP tokens are burned, permanently removing liquidity.');
-    } else if (!data.locked) {
+    } else if (!data.locked && !isEstablished) {
       risks.push('LP Not Locked');
       breakdown.push({ type: 'negative', text: 'LP Not Locked (-20)', points: -20 });
       explanations.push('🔴 LP is not locked – developer can remove liquidity anytime.');
+    } else if (!data.locked && isEstablished) {
+      warnings.push('LP Not Locked (Expected)');
+      breakdown.push({ type: 'neutral', text: 'LP Not Locked (0)', points: 0 });
+      explanations.push('ℹ️ Established token – LP lock not required for this project.');
     }
 
     if (data.ownershipRenounced) {
@@ -385,9 +425,15 @@ const LpLockChecker = () => {
       breakdown.push({ type: 'positive', text: 'Ownership Renounced (+15)', points: 15 });
       explanations.push('✅ Owner renounced contract ownership.');
     } else {
-      warnings.push('Ownership Active');
-      breakdown.push({ type: 'negative', text: 'Ownership Active (-10)', points: -10 });
-      explanations.push('⚠️ Ownership is active – developer can modify contract.');
+      if (isEstablished) {
+        warnings.push('Ownership Active (Controlled)');
+        breakdown.push({ type: 'neutral', text: 'Ownership Active (0)', points: 0 });
+        explanations.push('ℹ️ Ownership is active – this is typical for centralized tokens.');
+      } else {
+        warnings.push('Ownership Active');
+        breakdown.push({ type: 'negative', text: 'Ownership Active (-10)', points: -10 });
+        explanations.push('⚠️ Ownership is active – developer can modify contract.');
+      }
     }
 
     if (data.verification?.verified) {
@@ -401,9 +447,15 @@ const LpLockChecker = () => {
     }
 
     if (data.mintable) {
-      warnings.push('Mint Function Active');
-      breakdown.push({ type: 'negative', text: 'Mint Active (-15)', points: -15 });
-      explanations.push('⚠️ Mint function is active – supply can increase.');
+      if (isEstablished) {
+        warnings.push('Mint Function Active (Controlled)');
+        breakdown.push({ type: 'neutral', text: 'Mint Active (0)', points: 0 });
+        explanations.push('ℹ️ Mint function is active – this is typical for centralized tokens.');
+      } else {
+        warnings.push('Mint Function Active');
+        breakdown.push({ type: 'negative', text: 'Mint Active (-15)', points: -15 });
+        explanations.push('⚠️ Mint function is active – supply can increase.');
+      }
     } else {
       positives.push('No Mint Function');
       breakdown.push({ type: 'positive', text: 'No Mint (+15)', points: 15 });
@@ -417,9 +469,15 @@ const LpLockChecker = () => {
     }
 
     if (data.proxy) {
-      warnings.push('Proxy Contract');
-      breakdown.push({ type: 'negative', text: 'Proxy Contract (-5)', points: -5 });
-      explanations.push('⚠️ Proxy contract – contract can be upgraded.');
+      if (isEstablished) {
+        warnings.push('Proxy Contract (Upgradeable)');
+        breakdown.push({ type: 'neutral', text: 'Proxy Contract (0)', points: 0 });
+        explanations.push('ℹ️ Proxy contract – upgrade capability is common for established projects.');
+      } else {
+        warnings.push('Proxy Contract');
+        breakdown.push({ type: 'negative', text: 'Proxy Contract (-5)', points: -5 });
+        explanations.push('⚠️ Proxy contract – contract can be upgraded.');
+      }
     } else {
       positives.push('No Proxy');
       breakdown.push({ type: 'positive', text: 'No Proxy (+10)', points: 10 });
@@ -427,30 +485,40 @@ const LpLockChecker = () => {
     }
 
     if (data.blacklist) {
-      warnings.push('Blacklist Function');
-      breakdown.push({ type: 'negative', text: 'Blacklist (-5)', points: -5 });
-      explanations.push('⚠️ Blacklist function present – addresses can be blocked.');
+      if (isEstablished) {
+        warnings.push('Blacklist Function (Controlled)');
+        breakdown.push({ type: 'neutral', text: 'Blacklist (0)', points: 0 });
+        explanations.push('ℹ️ Blacklist function present – common for compliance in centralized tokens.');
+      } else {
+        warnings.push('Blacklist Function');
+        breakdown.push({ type: 'negative', text: 'Blacklist (-5)', points: -5 });
+        explanations.push('⚠️ Blacklist function present – addresses can be blocked.');
+      }
     } else {
       positives.push('No Blacklist');
       breakdown.push({ type: 'positive', text: 'No Blacklist (+5)', points: 5 });
       explanations.push('✅ No blacklist function.');
     }
 
-    if (data.creatorPercent > 50) {
+    if (data.creatorPercent > 50 && !isEstablished) {
       warnings.push(`Creator owns ${data.creatorPercent.toFixed(1)}%`);
       breakdown.push({ type: 'negative', text: `Creator ${data.creatorPercent.toFixed(1)}% (-30)`, points: -30 });
       explanations.push(`⚠️ Developer owns ${data.creatorPercent.toFixed(1)}% – high centralization risk.`);
-    } else if (data.creatorPercent > 30) {
+    } else if (data.creatorPercent > 30 && !isEstablished) {
       warnings.push(`Creator owns ${data.creatorPercent.toFixed(1)}%`);
       breakdown.push({ type: 'negative', text: `Creator ${data.creatorPercent.toFixed(1)}% (-20)`, points: -20 });
       explanations.push(`⚠️ Developer owns ${data.creatorPercent.toFixed(1)}% – moderate centralization.`);
-    } else if (data.creatorPercent > 20) {
+    } else if (data.creatorPercent > 20 && !isEstablished) {
       warnings.push(`Creator owns ${data.creatorPercent.toFixed(1)}%`);
       breakdown.push({ type: 'negative', text: `Creator ${data.creatorPercent.toFixed(1)}% (-10)`, points: -10 });
       explanations.push(`⚠️ Developer owns ${data.creatorPercent.toFixed(1)}% – some centralization.`);
+    } else if (data.creatorPercent > 20 && isEstablished) {
+      warnings.push(`Creator holds ${data.creatorPercent.toFixed(1)}% (Normal)`);
+      breakdown.push({ type: 'neutral', text: `Creator ${data.creatorPercent.toFixed(1)}% (0)`, points: 0 });
+      explanations.push(`ℹ️ Creator holds ${data.creatorPercent.toFixed(1)}% – acceptable for established tokens.`);
     }
 
-    if (data.contractAgeDays && data.contractAgeDays < 7) {
+    if (data.contractAgeDays && data.contractAgeDays < 7 && !isEstablished) {
       warnings.push(`Contract only ${data.contractAgeDays} days old`);
       breakdown.push({ type: 'negative', text: `Very New Contract (-15)`, points: -15 });
       explanations.push(`⚠️ Very new contract (${data.contractAgeDays} days) – higher risk.`);
@@ -460,17 +528,17 @@ const LpLockChecker = () => {
       explanations.push(`✅ Contract is ${data.contractAgeDays} days old – established.`);
     }
 
-    if (data.unlockDays !== null && data.unlockDays < 7) {
+    if (data.unlockDays !== null && data.unlockDays < 7 && !isEstablished) {
       risks.push(`LP unlocks in ${data.unlockDays} days`);
       breakdown.push({ type: 'critical', text: `Unlocks in ${data.unlockDays}d (-25)`, points: -25 });
       explanations.push(`🔴 LP unlocks in ${data.unlockDays} days – high risk of rug.`);
-    } else if (data.unlockDays !== null && data.unlockDays < 30) {
+    } else if (data.unlockDays !== null && data.unlockDays < 30 && !isEstablished) {
       warnings.push(`LP unlocks in ${data.unlockDays} days`);
       breakdown.push({ type: 'negative', text: `Unlocks in ${data.unlockDays}d (-15)`, points: -15 });
       explanations.push(`⚠️ LP unlocks in ${data.unlockDays} days – moderate risk.`);
     }
 
-    if (data.developerProjects && data.developerProjects > 3) {
+    if (data.developerProjects && data.developerProjects > 3 && !isEstablished) {
       warnings.push(`Developer launched ${data.developerProjects} projects`);
       breakdown.push({ type: 'negative', text: `Multiple Projects (-10)`, points: -10 });
       explanations.push(`⚠️ Developer has launched ${data.developerProjects} projects – check their history.`);
@@ -491,7 +559,7 @@ const LpLockChecker = () => {
       positives.push('Good Liquidity');
       breakdown.push({ type: 'positive', text: 'Good Liquidity (+7)', points: 7 });
       explanations.push(`✅ Good liquidity: ${formatCurrency(liq)}`);
-    } else if (liq > 10000) {
+    } else if (liq > 10000 && !isEstablished) {
       warnings.push('Low Liquidity');
       breakdown.push({ type: 'negative', text: 'Low Liquidity (+4)', points: 4 });
       explanations.push(`⚠️ Low liquidity: ${formatCurrency(liq)}`);
@@ -540,21 +608,23 @@ const LpLockChecker = () => {
   // --- Risk Flags ---
   const getRiskFlags = (data) => {
     const flags = [];
+    const isEstablished = data.isEstablished || false;
+
     if (data.honeypot) flags.push({ active: true, label: 'Honeypot', severity: 'critical' });
-    if (data.mintable) flags.push({ active: true, label: 'Hidden Mint', severity: 'high' });
-    if (data.blacklist) flags.push({ active: true, label: 'Blacklist', severity: 'medium' });
-    if (data.proxy) flags.push({ active: true, label: 'Proxy Contract', severity: 'medium' });
-    if (!data.ownershipRenounced) flags.push({ active: true, label: 'Owner Active', severity: 'high' });
-    if (!data.locked && !data.lpBurned) flags.push({ active: true, label: 'LP Unlocked', severity: 'high' });
+    if (data.mintable && !isEstablished) flags.push({ active: true, label: 'Hidden Mint', severity: 'high' });
+    if (data.blacklist && !isEstablished) flags.push({ active: true, label: 'Blacklist', severity: 'medium' });
+    if (data.proxy && !isEstablished) flags.push({ active: true, label: 'Proxy Contract', severity: 'medium' });
+    if (!data.ownershipRenounced && !isEstablished) flags.push({ active: true, label: 'Owner Active', severity: 'high' });
+    if (!data.locked && !data.lpBurned && !isEstablished) flags.push({ active: true, label: 'LP Unlocked', severity: 'high' });
     if (data.buyTax > 10 || data.sellTax > 10) flags.push({ active: true, label: 'Excessive Tax', severity: 'medium' });
-    if (data.contractAgeDays && data.contractAgeDays < 7) flags.push({ active: true, label: 'Very New Contract', severity: 'medium' });
+    if (data.contractAgeDays && data.contractAgeDays < 7 && !isEstablished) flags.push({ active: true, label: 'Very New Contract', severity: 'medium' });
     const creator = parseFloat(data.creatorPercent) || 0;
-    if (creator > 30) flags.push({ active: true, label: `Top Wallet: ${creator.toFixed(1)}%`, severity: 'critical' });
-    else if (creator > 20) flags.push({ active: true, label: `Top Wallet: ${creator.toFixed(1)}%`, severity: 'high' });
-    if (data.developerProjects && data.developerProjects > 3) {
+    if (creator > 30 && !isEstablished) flags.push({ active: true, label: `Top Wallet: ${creator.toFixed(1)}%`, severity: 'critical' });
+    else if (creator > 20 && !isEstablished) flags.push({ active: true, label: `Top Wallet: ${creator.toFixed(1)}%`, severity: 'high' });
+    if (data.developerProjects && data.developerProjects > 3 && !isEstablished) {
       flags.push({ active: true, label: `Multiple Projects (${data.developerProjects})`, severity: 'medium' });
     }
-    if (data.unlockDays !== null && data.unlockDays < 7) {
+    if (data.unlockDays !== null && data.unlockDays < 7 && !isEstablished) {
       flags.push({ active: true, label: `Unlocks in ${data.unlockDays}d`, severity: 'critical' });
     }
     return flags;
@@ -586,6 +656,7 @@ const LpLockChecker = () => {
 
     try {
       const cleanAddress = tokenAddress.trim();
+      const lowerAddress = cleanAddress.toLowerCase();
       const chainName = getChainName(selectedChain);
 
       const response = await axios.get(BACKEND_URL, {
@@ -658,6 +729,23 @@ const LpLockChecker = () => {
       const liquidity24hAgo = market?.liquidity24hAgo || 'N/A';
       const liquidity7dAgo = market?.liquidity7dAgo || 'N/A';
 
+      // Determine if token is established
+      const isEstablished = (() => {
+        // Check whitelist
+        if (TRUSTED_TOKENS[lowerAddress]) return true;
+        // Check market cap > 1B
+        const mc = parseFloat(marketCap);
+        if (!isNaN(mc) && mc > 1000000000) return true;
+        // Check CoinGecko rank < 100
+        const rank = parseInt(data.rank);
+        if (!isNaN(rank) && rank < 100) return true;
+        return data.isEstablished || false;
+      })();
+
+      // If established, adjust certain values
+      const isTrusted = !!TRUSTED_TOKENS[lowerAddress];
+      const trustedInfo = isTrusted ? TRUSTED_TOKENS[lowerAddress] : null;
+
       // Calculated values
       const buyVolume = volume24h !== 'N/A' ? parseFloat(volume24h) * 0.55 : 'N/A';
       const sellVolume = volume24h !== 'N/A' ? parseFloat(volume24h) * 0.45 : 'N/A';
@@ -725,43 +813,63 @@ const LpLockChecker = () => {
         community: Math.max(0, 100 - (isLocked ? lockedPercent : 0) - (isBurned ? 5 : 0) - (typeof creatorPercent === 'number' ? creatorPercent : 0)),
       };
 
-      // Fix Security Score: ensure positive points are considered
+      // --- ENHANCED SECURITY SCORE (with established token logic) ---
       const computeSecurityScore = (data) => {
         if (data.honeypot) return 0;
         let score = 50; // base
 
-        // LP Lock
+        // LP Lock (penalty reduced for established)
         if (data.locked) {
           score += (data.lockedPercent / 100) * 25;
         } else {
-          score -= 15;
+          if (!data.isEstablished) score -= 15;
+          // else no penalty
         }
 
-        // Unlock danger
+        // Unlock danger (only for non-established)
         if (data.unlockDays !== null && data.unlockDays !== undefined) {
-          if (data.unlockDays < 7) score -= 25;
-          else if (data.unlockDays < 30) score -= 15;
+          if (data.unlockDays < 7 && !data.isEstablished) score -= 25;
+          else if (data.unlockDays < 30 && !data.isEstablished) score -= 15;
         }
 
-        // Ownership
-        if (data.ownershipRenounced) score += 15;
-        else score -= 10;
+        // Ownership (penalty reduced for established)
+        if (data.ownershipRenounced) {
+          score += 15;
+        } else {
+          if (!data.isEstablished) score -= 10;
+          // else no penalty
+        }
 
-        // Verification
-        if (data.verification?.verified) score += 15;
-        else score -= 5;
+        // Verification (always bonus)
+        if (data.verification?.verified) {
+          score += 15;
+        } else {
+          score -= 5;
+        }
 
-        // Mint
-        if (!data.mintable) score += 15;
-        else score -= 15;
+        // Mint (penalty reduced for established)
+        if (!data.mintable) {
+          score += 15;
+        } else {
+          if (!data.isEstablished) score -= 15;
+          // else no penalty
+        }
 
-        // Proxy
-        if (!data.proxy) score += 10;
-        else score -= 5;
+        // Proxy (penalty reduced for established)
+        if (!data.proxy) {
+          score += 10;
+        } else {
+          if (!data.isEstablished) score -= 5;
+          // else no penalty
+        }
 
-        // Blacklist
-        if (!data.blacklist) score += 5;
-        else score -= 5;
+        // Blacklist (penalty reduced for established)
+        if (!data.blacklist) {
+          score += 5;
+        } else {
+          if (!data.isEstablished) score -= 5;
+          // else no penalty
+        }
 
         // Liquidity
         const liq = parseFloat(data.totalLiquidity) || 0;
@@ -776,13 +884,21 @@ const LpLockChecker = () => {
 
         // Age
         if (data.contractAgeDays && data.contractAgeDays > 90) score += 5;
-        else if (data.contractAgeDays && data.contractAgeDays < 7) score -= 15;
+        else if (data.contractAgeDays && data.contractAgeDays < 7) {
+          if (!data.isEstablished) score -= 15;
+          else score -= 5; // less penalty for established
+        }
 
-        // Holder concentration
+        // Holder concentration (only if not established)
         const creator = parseFloat(data.creatorPercent) || 0;
-        if (creator > 50) score -= 30;
-        else if (creator > 30) score -= 20;
-        else if (creator > 20) score -= 10;
+        if (!data.isEstablished) {
+          if (creator > 50) score -= 30;
+          else if (creator > 30) score -= 20;
+          else if (creator > 20) score -= 10;
+        } else {
+          // small penalty for extreme concentration even if established
+          if (creator > 80) score -= 10;
+        }
 
         // Social presence
         if (data.social && (data.social.website !== 'N/A' || data.social.twitter !== 'N/A' || data.social.telegram !== 'N/A')) {
@@ -792,8 +908,17 @@ const LpLockChecker = () => {
         // LP Burn – small bonus
         if (data.lpBurned) score += 5;
 
-        // Mint + Ownership combo
-        if (data.mintable && !data.ownershipRenounced) score -= 15;
+        // Mint + Ownership combo (only for non-established)
+        if (data.mintable && !data.ownershipRenounced && !data.isEstablished) {
+          score -= 15;
+        }
+
+        // Established token bonus
+        if (data.isEstablished) {
+          score += 15; // trust bonus
+          // if token is in whitelist, extra bonus
+          if (data.isTrusted) score += 10;
+        }
 
         return Math.max(0, Math.min(100, Math.round(score)));
       };
@@ -815,10 +940,17 @@ const LpLockChecker = () => {
         social,
         lpBurned: isBurned,
         honeypot,
+        isEstablished,
+        isTrusted,
       });
 
-      // Rug Probability (weighted)
+      // --- ENHANCED RUG PROBABILITY ---
       const computeRugProbability = (data) => {
+        // If established or trusted, very low probability
+        if (data.isEstablished || data.isTrusted) {
+          return Math.min(5, Math.round(Math.random() * 5)); // 0-5%
+        }
+
         let riskScore = 0;
         if (!data.locked) riskScore += 20;
         if (!data.ownershipRenounced) riskScore += 15;
@@ -850,6 +982,8 @@ const LpLockChecker = () => {
         creatorPercent,
         contractAgeDays,
         unlockDays,
+        isEstablished,
+        isTrusted,
       });
 
       const grade = getSecurityGrade(securityScore);
@@ -860,7 +994,7 @@ const LpLockChecker = () => {
       const volumeRatio = getVolumeToMCRatio(volume24h, marketCap);
       const lpMcRatio = getLPtoMCRatio(totalLiquidity, marketCap);
       
-      // NEW MARKET METRICS
+      // MARKET METRICS
       const buyPressure = getBuyPressure(buyVolume, sellVolume);
       const volumeSpike = getVolumeSpike(volume24h, volume7d);
       const athRecovery = getATHRecovery(price, ath);
@@ -989,14 +1123,20 @@ const LpLockChecker = () => {
         fdvAlert,
         tradingActivityScore,
         pairHealthScore,
+        isEstablished,
+        isTrusted,
+        trustedInfo,
       };
 
       const aiSummary = generateAISummary(fullData);
       const riskFlags = getRiskFlags(fullData);
       const contractFunctions = getContractFunctions(fullData);
 
-      // Market Health Score (combined)
-      const marketHealthScore = Math.round((tradingActivityScore + pairHealthScore) / 2);
+      // Market Health Score (boosted for established)
+      let marketHealthScore = Math.round((tradingActivityScore + pairHealthScore) / 2);
+      if (isEstablished) {
+        marketHealthScore = Math.min(100, marketHealthScore + 25);
+      }
 
       setLockData({ ...fullData, aiSummary, riskFlags, contractFunctions, marketHealthScore });
     } catch (err) {
@@ -1006,7 +1146,6 @@ const LpLockChecker = () => {
       setLoading(false);
     }
   };
-
 
   // --- Part 2 will have the JSX return and export ---
 
@@ -1107,11 +1246,19 @@ const LpLockChecker = () => {
                       {lockData.grade.label}
                     </h2>
                     <p className="text-gray-400 text-sm">
-                      {lockData.grade.label === 'Safe' ? '✅ No major risks detected' :
-                       lockData.grade.label === 'Medium Risk' ? '⚠️ Some risk factors present' :
-                       lockData.grade.label === 'High Risk' ? '🔴 Multiple risk factors' :
-                       '🚨 Critical risk factors detected'}
+                      {lockData.isEstablished ? 
+                        (lockData.grade.label === 'Safe' ? '✅ Established token – low risk' : 'ℹ️ Established token – some risks typical') :
+                        (lockData.grade.label === 'Safe' ? '✅ No major risks detected' :
+                         lockData.grade.label === 'Medium Risk' ? '⚠️ Some risk factors present' :
+                         lockData.grade.label === 'High Risk' ? '🔴 Multiple risk factors' :
+                         '🚨 Critical risk factors detected')
+                      }
                     </p>
+                    {lockData.isEstablished && (
+                      <div className="mt-1 text-xs text-blue-400 flex items-center gap-1">
+                        <CheckCircle size={14} /> Established token – scoring adjusted for centralized projects
+                      </div>
+                    )}
                     {lockData.unlockWarning && (
                       <div className={`mt-2 inline-block px-3 py-1 rounded-full text-xs font-bold ${lockData.unlockWarning.color}`}>
                         {lockData.unlockWarning.emoji} {lockData.unlockWarning.level} – Unlocks in {lockData.unlockDays} days
@@ -1138,7 +1285,8 @@ const LpLockChecker = () => {
                     <span key={i} className={`text-xs px-2 py-1 rounded-full ${
                       item.type === 'positive' ? 'bg-green-600/20 text-green-400' :
                       item.type === 'negative' ? 'bg-yellow-600/20 text-yellow-400' :
-                      'bg-red-600/20 text-red-400'
+                      item.type === 'critical' ? 'bg-red-600/20 text-red-400' :
+                      'bg-blue-600/20 text-blue-400'
                     }`}>
                       {item.text}
                     </span>
@@ -1192,6 +1340,12 @@ const LpLockChecker = () => {
               <div>
                 <p className="text-gray-400 text-sm">
                   Token: <span className="text-white font-bold">{lockData.tokenName} ({lockData.tokenSymbol})</span> &nbsp;|&nbsp; Chain: <span className="text-white font-bold">{getChainDisplay(lockData.chain)}</span>
+                  {lockData.isEstablished && (
+                    <span className="ml-2 text-xs text-blue-400 bg-blue-600/20 px-2 py-0.5 rounded-full">✅ Established</span>
+                  )}
+                  {lockData.isTrusted && (
+                    <span className="ml-1 text-xs text-green-400 bg-green-600/20 px-2 py-0.5 rounded-full">🏦 Trusted</span>
+                  )}
                 </p>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
                   <span className="text-xs text-gray-500">Locker:</span>
@@ -1334,12 +1488,17 @@ const LpLockChecker = () => {
                   </div>
                 </div>
               </div>
-              {lockData.marketHealthScore < 70 && (
+              {lockData.marketHealthScore < 70 && !lockData.isEstablished && (
                 <div className="mt-4 text-sm text-yellow-400">
                   ⚠️ Low market health due to {lockData.liquidityChange24h !== null && lockData.liquidityChange24h < 0 ? 'liquidity decline, ' : ''}
                   {lockData.volumeSpike?.value < -20 && 'low volume, '}
                   {lockData.holderGrowth <= 0 && 'stagnant holder growth, '}
                   and moderate buy pressure.
+                </div>
+              )}
+              {lockData.isEstablished && lockData.marketHealthScore < 70 && (
+                <div className="mt-4 text-sm text-blue-400">
+                  ℹ️ Market health for established token may be affected by exchange liquidity, not necessarily a risk.
                 </div>
               )}
             </div>
@@ -1640,12 +1799,12 @@ const LpLockChecker = () => {
                   </div>
                 </div>
               </div>
-              {lockData.creatorPercent > 20 && (
+              {lockData.creatorPercent > 20 && !lockData.isEstablished && (
                 <div className="mt-3 text-sm text-red-400 flex items-center gap-2">
                   <AlertTriangle size={16} /> Developer owns {lockData.creatorPercent.toFixed(1)}% – high centralization risk
                 </div>
               )}
-              {lockData.developerProjects > 3 && (
+              {lockData.developerProjects > 3 && !lockData.isEstablished && (
                 <div className="mt-2 text-sm text-yellow-400 flex items-center gap-2">
                   <AlertTriangle size={16} /> Developer has launched {lockData.developerProjects} projects – check their history
                 </div>
